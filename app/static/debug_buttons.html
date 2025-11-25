@@ -1,0 +1,18 @@
+<!-- temporary debug UI: triggers __appStatus report in an alert -->
+<style>
+  #appDebugBtn { position: fixed; left: 12px; top: 12px; z-index:99999; padding:8px 10px; background:#b24bf3; color:#fff; border-radius:6px; border:none; }
+</style>
+<button id="appDebugBtn">App Status (debug)</button>
+<script>
+  (function(){
+    const btn = document.getElementById('appDebugBtn');
+    btn.addEventListener('click', () => {
+      try {
+        const status = window.__appStatus ? window.__appStatus() : { error: 'no __appStatus' };
+        alert('App status:\n' + JSON.stringify(status, null, 2));
+      } catch (e) {
+        alert('Debug failed: ' + e.message);
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Teide Observatory (ES)",
+    "lat": 28.3,
+    "lon": -16.509,
+    "aperture_m": 1.0,
+    "id": "station-1789c64c-0"
+  },
+  {
+    "name": "Matera Laser Ranging (IT)",
+    "lat": 40.649,
+    "lon": 16.704,
+    "aperture_m": 1.5,
+    "id": "station-2048fa5e-1"
+  },
+  {
+    "name": "Observatoire de la Côte d’Azur (FR)",
+    "lat": 43.754,
+    "lon": 6.92,
+    "aperture_m": 1.54,
+    "id": "station-df416913-2"
+  },
+  {
+    "name": "Vienna Observatory (AT)",
+    "lat": 48.248,
+    "lon": 16.357,
+    "aperture_m": 0.8,
+    "id": "station-4719d4e7-3"
+  }
+]
