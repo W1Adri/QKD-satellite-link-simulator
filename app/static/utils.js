@@ -1,3 +1,16 @@
+// ---------------------------------------------------------------------------
+// app/static/utils.js
+// ---------------------------------------------------------------------------
+// Purpose : Shared math constants, formatting functions, logging helpers,
+//           safe fetch wrapper, and small geometry utilities (haversine).
+//
+// Exports : DEG2RAD, RAD2DEG, TWO_PI, clamp, lerp, formatDistanceKm,
+//           formatAngle, formatLoss, formatDuration, formatDoppler,
+//           isoNowLocal, haversineDistance, smoothArray,
+//           findClosestRational, logCheckpoint, logError, logWarning,
+//           logInfo, setLogLevel, safeFetch, validateNumber,
+//           validateRequired
+// ---------------------------------------------------------------------------
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const TWO_PI = Math.PI * 2;

@@ -1,3 +1,22 @@
+// ---------------------------------------------------------------------------
+// app/static/ui.js
+// ---------------------------------------------------------------------------
+// Purpose : Rendering layer — combines Three.js 3D globe (scene3d),
+//           Leaflet 2D map (map2d), procedural earth textures, GLSL
+//           shaders, and panel/slider utilities.
+//
+// Exports : earthTexture, map2d, scene3d, initSliders, createPanelAccordions
+//
+// Structure:
+//   Lines   1-600   : Geodata constants (land masses, cities, colors)
+//   Lines 600-900   : Texture generation (day/night canvas, loading)
+//   Lines 900-1580  : map2d (Leaflet 2D map functions)
+//   Lines 1580-2700 : scene3d (Three.js 3D globe functions)
+//   Lines 2700+     : Slider/accordion utilities
+//
+// NOTE    : Further decomposition into geodata.js, textures.js, map2d.js,
+//           scene3d.js is planned for future iterations.
+// ---------------------------------------------------------------------------
 import { clamp, formatDistanceKm } from './utils.js';
 import { orbit } from './simulation.js';
 

@@ -1,4 +1,53 @@
+// ---------------------------------------------------------------------------
+// app/static/main.js
+// ---------------------------------------------------------------------------
+// Purpose : Application entry point and coordinator.  Owns DOM caching,
+//           event binding, orbit computation lifecycle, playback loop,
+//           chart rendering, and station / constellation management.
+//           Delegates rendering to ui.js and physics to simulation.js/api.js.
+//
+// Modular Structure (extracted modules):
+//   - state.js       : Reactive state management (pub/sub, mutations)
+//   - stations.js    : OGS API operations (load, persist, delete)
+//   - formatters.js  : Domain-specific value formatters
+//   - tooltips.js    : Info tooltip management
+//   - weather.js     : Weather field configuration and helpers
+//
+// NOTE    : Further decomposition of event binding and chart rendering
+//           is planned for future iterations.
+// ---------------------------------------------------------------------------
 import { isoNowLocal, clamp, formatAngle, formatDistanceKm, formatLoss, formatDoppler, formatDuration, findClosestRational } from './utils.js';
+
+// Re-export from extracted modules for this file's internal use
+// (keeping local references for backward compatibility with existing code)
+import {
+  state, defaultState, CONSTELLATION_GROUPS,
+  subscribe, emit, mutate, resetComputed,
+  setTheme, setVariant, ensureStationSelected,
+  upsertStation, removeStation, removeStations, selectStation,
+  setTimeline, setComputed, togglePlay, setTimeIndex, setTimeWarp,
+  withConstellationGroup, setConstellationEnabled,
+  setConstellationLoading, setConstellationMetadata, setConstellationError,
+  createDefaultConstellationState
+} from './state.js';
+
+import {
+  loadStationsFromServer, persistStation, clearStations, deleteStationRemote
+} from './stations.js';
+
+import {
+  firstFiniteValue, valueFromSeries, formatR0Meters, formatGreenwoodHz,
+  formatThetaArcsec, formatWindMps, normalizeLongitude
+} from './formatters.js';
+// formatKm, formatDecimal, normalizeInt, normalizeTolerance kept local (custom behavior)
+
+import { initInfoButtons } from './tooltips.js';
+
+import {
+  WEATHER_FIELDS, setWeatherElements, populateWeatherFieldOptions,
+  populateWeatherLevelOptions, sanitizeWeatherSamples, syncWeatherSamplesInputs,
+  setWeatherStatus, toWeatherIso
+} from './weather.js';
 import { orbit, resonanceSolver, walkerGenerator, qkdCalculations } from './simulation.js';
 import { map2d, scene3d, initSliders, createPanelAccordions } from './ui.js';
 
@@ -6,390 +55,6 @@ const { constants: orbitConstants } = orbit;
 const { searchResonances, periodFromA, aFromPeriod } = resonanceSolver;
 const { generateWalkerConstellation } = walkerGenerator;
 const { calculateQKDPerformance } = qkdCalculations;
-
-const CONSTELLATION_GROUPS = [
-  { id: 'starlink', label: 'Starlink', color: '#38bdf8' },
-  { id: 'oneweb', label: 'OneWeb', color: '#f97316' },
-  { id: 'gps', label: 'GPS', color: '#a855f7' },
-  { id: 'galileo', label: 'Galileo', color: '#22c55e' },
-  { id: 'glonass', label: 'GLONASS', color: '#ef4444' },
-];
-
-function createDefaultConstellationState() {
-  const registry = CONSTELLATION_GROUPS.reduce((acc, item) => {
-    acc[item.id] = {
-      id: item.id,
-      label: item.label,
-      color: item.color,
-      enabled: false,
-      loading: false,
-      error: null,
-      hasData: false,
-      count: 0,
-      fetchedAt: null,
-    };
-    return acc;
-  }, {});
-  return {
-    registry,
-    order: CONSTELLATION_GROUPS.map((item) => item.id),
-  };
-}
-
-const listeners = new Set();
-
-const defaultState = {
-  variant: document.body?.dataset?.variant ?? 'compact',
-  mode: 'individual',
-  theme: 'light',
-  satelliteName: 'Sat-QKD',
-  epoch: isoNowLocal(),
-  viewMode: 'dual',
-  orbital: {
-    semiMajor: 6771,
-    eccentricity: 0.001,
-    inclination: 53,
-    raan: 0,
-    argPerigee: 0,
-    meanAnomaly: 0,
-    j2Enabled: true,
-  },
-  resonance: {
-    enabled: true,
-    orbits: 1,
-    rotations: 1,
-  },
-  optical: {
-    satAperture: 0.6,
-    groundAperture: 1.0,
-    wavelength: 810,
-    groundCn2Day: 5e-14,
-    groundCn2Night: 5e-15,
-  },
-  atmosphere: {
-    model: 'hufnagel-valley',
-    modelParams: {},
-  },
-  weather: {
-    active: false,
-    variable: 'wind_speed',
-    level_hpa: 200,
-    samples: 120,
-    time: isoNowLocal(),
-    data: null,
-    status: 'idle',
-  },
-  samplesPerOrbit: 180,
-  time: {
-    playing: false,
-    timeWarp: 60,
-    index: 0,
-    totalSeconds: 5400,
-    timeline: [],
-  },
-  stations: {
-    list: [],
-    selectedId: null,
-  },
-  optimizationPoints: [],
-  constellations: createDefaultConstellationState(),
-  computed: {
-    semiMajor: null,
-    orbitPeriod: null,
-    dataPoints: [],
-    groundTrack: [],
-    constellationPositions: {},
-    metrics: {
-      distanceKm: [],
-      elevationDeg: [],
-      lossDb: [],
-      doppler: [],
-      azimuthDeg: [],
-      r0_array: [],
-      fG_array: [],
-      theta0_array: [],
-      wind_array: [],
-      loss_aod_array: [],
-      loss_abs_array: [],
-      r0_zenith: null,
-      fG_zenith: null,
-      theta0_zenith: null,
-      wind_rms: null,
-      loss_aod_db: null,
-      loss_abs_db: null,
-      atmosphereProfile: null,
-    },
-    resonance: {
-      requested: false,
-      applied: false,
-      ratio: null,
-      warnings: [],
-      semiMajorKm: null,
-  deltaKm: null,
-      targetPeriodSeconds: null,
-      periodSeconds: null,
-      perigeeKm: null,
-      apogeeKm: null,
-      closureSurfaceKm: null,
-      closureCartesianKm: null,
-      latDriftDeg: null,
-      lonDriftDeg: null,
-      closed: false,
-    },
-  },
-};
-
-const state = structuredClone(defaultState);
-
-function subscribe(listener, invokeImmediately = true) {
-  if (typeof listener !== 'function') return () => {};
-  listeners.add(listener);
-  if (invokeImmediately) {
-    listener(state);
-  }
-  return () => listeners.delete(listener);
-}
-
-function emit() {
-  listeners.forEach((listener) => {
-    try {
-      listener(state);
-    } catch (err) {
-      console.error('State subscriber error', err);
-    }
-  });
-}
-
-function mutate(mutator) {
-  if (typeof mutator !== 'function') return;
-  mutator(state);
-  emit();
-}
-
-function resetComputed() {
-  state.computed = structuredClone(defaultState.computed);
-  emit();
-}
-
-function setTheme(theme) {
-  mutate((draft) => {
-    draft.theme = theme;
-  });
-}
-
-function setVariant(variant) {
-  mutate((draft) => {
-    draft.variant = variant;
-  });
-}
-
-function ensureStationSelected() {
-  const { list, selectedId } = state.stations;
-  if (list.length === 0) {
-    state.stations.selectedId = null;
-    return;
-  }
-  const exists = list.some((item) => item.id === selectedId);
-  if (!exists) {
-    state.stations.selectedId = list[0].id;
-  }
-}
-
-function upsertStation(station) {
-  mutate((draft) => {
-    const idx = draft.stations.list.findIndex((item) => item.id === station.id);
-    if (idx >= 0) {
-      draft.stations.list[idx] = station;
-    } else {
-      draft.stations.list.push(station);
-    }
-    draft.stations.selectedId = station.id;
-  });
-}
-
-function removeStations() {
-  mutate((draft) => {
-    draft.stations.list = [];
-    draft.stations.selectedId = null;
-  });
-}
-
-function removeStation(id) {
-  if (!id) return;
-  mutate((draft) => {
-    const filtered = draft.stations.list.filter((item) => item.id !== id);
-    draft.stations.list = filtered;
-    if (draft.stations.selectedId === id) {
-      draft.stations.selectedId = filtered.length ? filtered[0].id : null;
-    }
-  });
-}
-
-function selectStation(id) {
-  mutate((draft) => {
-    draft.stations.selectedId = id;
-  });
-}
-
-function setTimeline(data) {
-  mutate((draft) => {
-    draft.time.timeline = data.timeline;
-    draft.time.totalSeconds = data.totalSeconds;
-    draft.time.index = Math.min(draft.time.index, data.timeline.length - 1);
-  });
-}
-
-function setComputed(payload) {
-  mutate((draft) => {
-    draft.computed = payload;
-  });
-}
-
-function togglePlay(play) {
-  mutate((draft) => {
-    draft.time.playing = play;
-  });
-}
-
-function setTimeIndex(index) {
-  mutate((draft) => {
-    draft.time.index = index;
-  });
-}
-
-function setTimeWarp(value) {
-  mutate((draft) => {
-    draft.time.timeWarp = value;
-  });
-}
-
-function withConstellationGroup(groupId, updater) {
-  if (!groupId || typeof updater !== 'function') return;
-  mutate((draft) => {
-    const registry = draft.constellations?.registry;
-    if (!registry || !registry[groupId]) return;
-    updater(registry[groupId]);
-  });
-}
-
-function setConstellationEnabled(groupId, enabled) {
-  withConstellationGroup(groupId, (group) => {
-    group.enabled = Boolean(enabled);
-  });
-}
-
-function setConstellationLoading(groupId, loading) {
-  withConstellationGroup(groupId, (group) => {
-    group.loading = Boolean(loading);
-    if (loading) {
-      group.error = null;
-    }
-  });
-}
-
-function setConstellationMetadata(groupId, metadata = {}) {
-  withConstellationGroup(groupId, (group) => {
-    if (Object.prototype.hasOwnProperty.call(metadata, 'hasData')) {
-      group.hasData = Boolean(metadata.hasData);
-    }
-    if (Object.prototype.hasOwnProperty.call(metadata, 'count')) {
-      group.count = Number(metadata.count) || 0;
-    }
-    if (Object.prototype.hasOwnProperty.call(metadata, 'fetchedAt')) {
-      group.fetchedAt = metadata.fetchedAt ?? null;
-    }
-  });
-}
-
-function setConstellationError(groupId, message) {
-  withConstellationGroup(groupId, (group) => {
-    group.error = message || null;
-  });
-}
-
-let builtinStations = [
-  { id: 'tenerife', name: 'Teide Observatory (ES)', lat: 28.3, lon: -16.509, aperture: 1.0 },
-  { id: 'matera', name: 'Matera Laser Ranging (IT)', lat: 40.649, lon: 16.704, aperture: 1.5 },
-  { id: 'grasse', name: 'Observatoire de la Côte d’Azur (FR)', lat: 43.754, lon: 6.920, aperture: 1.54 },
-  { id: 'toulouse', name: 'Toulouse Space Centre (FR)', lat: 43.604, lon: 1.444, aperture: 1.0 },
-  { id: 'vienna', name: 'Vienna Observatory (AT)', lat: 48.248, lon: 16.357, aperture: 0.8 },
-  { id: 'sodankyla', name: 'Sodankylä Geophysical (FI)', lat: 67.366, lon: 26.633, aperture: 1.0 },
-  { id: 'matera2', name: 'Matera Secondary (IT)', lat: 40.64, lon: 16.7, aperture: 1.2 },
-  { id: 'tenerife2', name: 'La Palma Roque (ES)', lat: 28.761, lon: -17.89, aperture: 2.0 },
-];
-
-async function loadStationsFromServer() {
-  let loadedFromServer = false;
-  try {
-    const response = await fetch('/api/ogs');
-    if (response.ok) {
-      const data = await response.json();
-      if (Array.isArray(data) && data.length) {
-        builtinStations = data.map((item, idx) => ({
-          id: item.id ?? `${item.name.replace(/\s+/g, '-').toLowerCase()}-${idx}`,
-          name: item.name,
-          lat: item.lat,
-          lon: item.lon,
-          aperture: item.aperture_m ?? 1.0,
-        }));
-        loadedFromServer = true;
-      }
-    }
-  } catch (error) {
-    console.warn('Remote stations could not be loaded, falling back to built-in list.', error);
-  }
-
-  if (!loadedFromServer) {
-    for (const station of builtinStations) {
-      await persistStation(station);
-    }
-  }
-  builtinStations.forEach((station) => upsertStation(station));
-}
-
-async function persistStation(station) {
-  try {
-    const response = await fetch('/api/ogs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: station.id,
-        name: station.name,
-        lat: station.lat,
-        lon: station.lon,
-        aperture_m: station.aperture,
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Error ${response.status}`);
-    }
-  } catch (error) {
-    console.warn('Station could not be persisted on the backend; keeping it in memory only.', error);
-  }
-}
-
-async function clearStations() {
-  try {
-    await fetch('/api/ogs', { method: 'DELETE' });
-  } catch (error) {
-    console.warn('Remote station records could not be cleared.', error);
-  }
-  removeStations();
-}
-
-async function deleteStationRemote(stationId) {
-  if (!stationId) return;
-  try {
-    const response = await fetch(`/api/ogs/${encodeURIComponent(stationId)}`, { method: 'DELETE' });
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Error ${response.status}`);
-    }
-  } catch (error) {
-    console.warn('Station could not be removed on the backend; removing it locally only.', error);
-  }
-  builtinStations = builtinStations.filter((station) => station.id !== stationId);
-  removeStation(stationId);
-}
 
 const {
   initMap,
@@ -451,14 +116,6 @@ const stationDialogDragState = {
   dialogY: 0,
 };
 
-const INFO_TOOLTIP_ID = 'infoTooltip';
-let infoTooltipEl = null;
-let activeInfoButton = null;
-let infoTooltipSticky = false;
-let infoTooltipHideTimeout = null;
-let infoTooltipListenersBound = false;
-const initializedInfoButtons = new WeakSet();
-
 const optimizerState = {
   results: [],
   query: null,
@@ -470,269 +127,6 @@ let lastConstellationIndex = -1;
 const PANEL_MIN_WIDTH = 240;
 const PANEL_MAX_WIDTH = 520;
 const PANEL_COLLAPSE_THRESHOLD = 280;
-const WEATHER_FIELDS = {
-  'wind_speed': {
-    label: 'Wind speed',
-    units: 'm/s',
-    levels: [200, 250, 300, 500, 700, 850],
-  },
-  temperature: {
-    label: 'Temperature',
-    units: 'degC',
-    levels: [200, 300, 500, 700, 850],
-  },
-  relative_humidity: {
-    label: 'Relative humidity',
-    units: '%',
-    levels: [700, 850, 925],
-  },
-  geopotential_height: {
-    label: 'Geopotential height',
-    units: 'm',
-    levels: [500, 700, 850],
-  },
-};
-
-function firstFiniteValue(series) {
-  if (!Array.isArray(series)) return null;
-  for (let i = 0; i < series.length; i += 1) {
-    const candidate = series[i];
-    if (Number.isFinite(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function valueFromSeries(series, index, fallback = null) {
-  if (Array.isArray(series) && series.length) {
-    const idx = clamp(index, 0, series.length - 1);
-    const candidate = series[idx];
-    if (Number.isFinite(candidate)) return candidate;
-    const first = firstFiniteValue(series);
-    if (Number.isFinite(first)) return first;
-  }
-  if (Number.isFinite(fallback)) return fallback;
-  return null;
-}
-
-function formatR0Meters(value) {
-  if (!Number.isFinite(value)) return '--';
-  if (Math.abs(value) >= 0.01) {
-    return value.toFixed(3);
-  }
-  return value.toExponential(2);
-}
-
-function formatGreenwoodHz(value) {
-  if (!Number.isFinite(value)) return '--';
-  return value.toFixed(1);
-}
-
-function formatThetaArcsec(value) {
-  if (!Number.isFinite(value)) return '--';
-  return value.toFixed(1);
-}
-
-function formatWindMps(value) {
-  if (!Number.isFinite(value)) return '--';
-  return value.toFixed(1);
-}
-
-function normalizeLongitude(lon) {
-  if (!Number.isFinite(lon)) return lon;
-  let normalized = lon;
-  while (normalized < -180) normalized += 360;
-  while (normalized > 180) normalized -= 360;
-  return normalized;
-}
-
-function populateWeatherFieldOptions(selectedKey = 'wind_speed') {
-  if (!elements.weatherFieldSelect) return;
-  elements.weatherFieldSelect.innerHTML = '';
-  Object.entries(WEATHER_FIELDS).forEach(([key, meta]) => {
-    const option = document.createElement('option');
-    option.value = key;
-    option.textContent = `${meta.label} (${meta.units})`;
-    option.selected = key === selectedKey;
-    elements.weatherFieldSelect.appendChild(option);
-  });
-}
-
-function populateWeatherLevelOptions(fieldKey, selectedLevel) {
-  if (!elements.weatherLevelSelect) return;
-  const meta = WEATHER_FIELDS[fieldKey] || WEATHER_FIELDS.wind_speed;
-  const levels = Array.isArray(meta.levels) ? meta.levels : [];
-  elements.weatherLevelSelect.innerHTML = '';
-  levels.forEach((level) => {
-    const option = document.createElement('option');
-    option.value = String(level);
-    option.textContent = `${level}`;
-    option.selected = level === selectedLevel;
-    elements.weatherLevelSelect.appendChild(option);
-  });
-}
-
-function sanitizeWeatherSamples(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return 120;
-  return clamp(Math.round(numeric / 8) * 8, 16, 900);
-}
-
-function syncWeatherSamplesInputs(value) {
-  const sanitized = sanitizeWeatherSamples(value);
-  if (elements.weatherSamples) {
-    elements.weatherSamples.value = String(sanitized);
-  }
-  if (elements.weatherSamplesSlider) {
-    elements.weatherSamplesSlider.value = String(sanitized);
-  }
-  return sanitized;
-}
-
-function setWeatherStatus(message) {
-  if (elements.weatherStatus) {
-    elements.weatherStatus.textContent = message || '';
-  }
-}
-
-function toWeatherIso(timeValue) {
-  if (!timeValue) {
-    return `${isoNowLocal()}:00Z`;
-  }
-  const trimmed = timeValue.trim();
-  if (!trimmed) {
-    return `${isoNowLocal()}:00Z`;
-  }
-  if (trimmed.endsWith('Z')) {
-    if (trimmed.length === 16) {
-      return `${trimmed}:00Z`;
-    }
-    return trimmed;
-  }
-  if (trimmed.length === 16) {
-    return `${trimmed}:00Z`;
-  }
-  if (trimmed.length === 19 && trimmed.charAt(16) === ':') {
-    return `${trimmed}Z`;
-  }
-  return `${trimmed}:00Z`;
-}
-
-function ensureInfoTooltip() {
-  if (infoTooltipEl) return infoTooltipEl;
-  const tooltip = document.createElement('div');
-  tooltip.className = 'info-tooltip';
-  tooltip.id = INFO_TOOLTIP_ID;
-  tooltip.setAttribute('role', 'tooltip');
-  tooltip.setAttribute('aria-hidden', 'true');
-  tooltip.dataset.visible = 'false';
-  document.body.appendChild(tooltip);
-  infoTooltipEl = tooltip;
-  return tooltip;
-}
-
-function positionInfoTooltip(button) {
-  if (!infoTooltipEl || !button) return;
-  const rect = button.getBoundingClientRect();
-  const margin = 12;
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const tooltipWidth = infoTooltipEl.offsetWidth;
-  const tooltipHeight = infoTooltipEl.offsetHeight;
-
-  let top = rect.bottom + margin;
-  if (top + tooltipHeight + margin > viewportHeight) {
-    top = Math.max(rect.top - tooltipHeight - margin, margin);
-  }
-
-  let left = rect.left + rect.width / 2 - tooltipWidth / 2;
-  left = Math.min(Math.max(left, margin), viewportWidth - tooltipWidth - margin);
-
-  infoTooltipEl.style.top = `${Math.round(top)}px`;
-  infoTooltipEl.style.left = `${Math.round(left)}px`;
-}
-
-function showInfoTooltip(button, { sticky = false } = {}) {
-  const tooltip = ensureInfoTooltip();
-  if (!(button instanceof HTMLElement)) return;
-  const content = button.dataset.info;
-  if (!content) return;
-  clearTimeout(infoTooltipHideTimeout);
-  infoTooltipSticky = sticky;
-  activeInfoButton = button;
-  tooltip.textContent = content;
-  tooltip.dataset.visible = 'true';
-  tooltip.setAttribute('aria-hidden', 'false');
-  button.setAttribute('aria-expanded', 'true');
-  button.setAttribute('aria-describedby', INFO_TOOLTIP_ID);
-  positionInfoTooltip(button);
-}
-
-function hideInfoTooltip(force = false) {
-  if (!infoTooltipEl) return;
-  if (!force && infoTooltipSticky) return;
-  infoTooltipSticky = false;
-  infoTooltipEl.dataset.visible = 'false';
-  infoTooltipEl.setAttribute('aria-hidden', 'true');
-  if (activeInfoButton) {
-    activeInfoButton.setAttribute('aria-expanded', 'false');
-    activeInfoButton.removeAttribute('aria-describedby');
-  }
-  activeInfoButton = null;
-}
-
-function scheduleInfoTooltipHide(force = false) {
-  clearTimeout(infoTooltipHideTimeout);
-  infoTooltipHideTimeout = setTimeout(() => hideInfoTooltip(force), force ? 0 : 120);
-}
-
-function repositionActiveTooltip() {
-  if (!infoTooltipEl) return;
-  if (infoTooltipEl.dataset.visible !== 'true' || !activeInfoButton) return;
-  positionInfoTooltip(activeInfoButton);
-}
-
-function initInfoButtons() {
-  ensureInfoTooltip();
-  const buttons = document.querySelectorAll('.info-button[data-info]');
-  buttons.forEach((button) => {
-    if (!(button instanceof HTMLElement) || initializedInfoButtons.has(button)) return;
-    initializedInfoButtons.add(button);
-    button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('pointerenter', () => showInfoTooltip(button, { sticky: false }));
-    button.addEventListener('pointerleave', () => scheduleInfoTooltipHide(false));
-    button.addEventListener('focus', () => showInfoTooltip(button, { sticky: false }));
-    button.addEventListener('blur', () => scheduleInfoTooltipHide(false));
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      if (activeInfoButton === button && infoTooltipSticky) {
-        scheduleInfoTooltipHide(true);
-      } else {
-        showInfoTooltip(button, { sticky: true });
-      }
-    });
-  });
-
-  if (!infoTooltipListenersBound) {
-    infoTooltipListenersBound = true;
-    window.addEventListener('resize', repositionActiveTooltip);
-    document.addEventListener('scroll', repositionActiveTooltip, true);
-    document.addEventListener('pointerdown', (event) => {
-      if (!infoTooltipSticky) return;
-      const target = event.target;
-      if (target instanceof HTMLElement && (target.closest('.info-button') || target.closest('.info-tooltip'))) {
-        return;
-      }
-      scheduleInfoTooltipHide(true);
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        scheduleInfoTooltipHide(true);
-      }
-    });
-  }
-}
 
 function updateStationPickHint(lat = null, lon = null, awaiting = false) {
   const hintEl = elements.stationPickHint;
@@ -748,7 +142,7 @@ function updateStationPickHint(lat = null, lon = null, awaiting = false) {
   if (Number.isFinite(lat) && Number.isFinite(lon)) {
     hintEl.hidden = false;
     hintEl.classList.add('is-active');
-    hintEl.textContent = `Selected location: ${lat.toFixed(4)}°, ${lon.toFixed(4)}°`;
+    hintEl.textContent = `Selected location: ${lat.toFixed(4)}Â°, ${lon.toFixed(4)}Â°`;
     return;
   }
 
@@ -1320,10 +714,10 @@ function renderOptimizerResults(partial = false) {
   const summaryPrefix = partial ? 'Partially Resonant: ' : 'Result: ';
 
   if (elements.optSummary) {
-    elements.optSummary.textContent = `${summaryPrefix}${results.length} match(es) for a₀ = ${formatKm(
+    elements.optSummary.textContent = `${summaryPrefix}${results.length} match(es) for aâ‚€ = ${formatKm(
       targetA,
       0, // Removed decimals for semiMajor in summary
-    )} km ± ${toleranceText}, j ∈ [${minRotations}, ${maxRotations}], k ∈ [${minOrbits}, ${maxOrbits}].`;
+    )} km Â± ${toleranceText}, j âˆˆ [${minRotations}, ${maxRotations}], k âˆˆ [${minOrbits}, ${maxOrbits}].`;
   }
 
   if (!results.length) {
@@ -1336,7 +730,7 @@ function renderOptimizerResults(partial = false) {
   const table = document.createElement('table');
   table.className = 'resonance-table';
   table.innerHTML =
-    '<thead><tr><th>j</th><th>k</th><th>j/k</th><th>a (km)</th><th>Δa (km)</th><th>Period</th><th></th></tr></thead>';
+    '<thead><tr><th>j</th><th>k</th><th>j/k</th><th>a (km)</th><th>Î”a (km)</th><th>Period</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
   const maxRows = Math.min(results.length, 200);
   for (let idx = 0; idx < maxRows; idx += 1) {
@@ -1351,7 +745,7 @@ function renderOptimizerResults(partial = false) {
       <td>${formatKm(hit.semiMajorKm, 0)}</td>
       <td>${deltaText}</td>
       <td>${formatDuration(hit.periodSec)}</td>
-      <td><button type="button" class="apply-btn" data-index="${idx}">✓</button></td>
+      <td><button type="button" class="apply-btn" data-index="${idx}">âœ“</button></td>
     `;
     tbody.appendChild(row);
   }
@@ -1502,7 +896,7 @@ function diagnoseAndSuggestResonances(query) {
 
     if (bestClosest) {
       const deltaAFromTarget = bestClosest.semiMajorKm - targetA;
-      lines.push(`<p>The closest resonance for a₀ = ${formatKm(targetA, 0)} km is <strong>${bestClosest.j}:${bestClosest.k}</strong>.`);
+      lines.push(`<p>The closest resonance for aâ‚€ = ${formatKm(targetA, 0)} km is <strong>${bestClosest.j}:${bestClosest.k}</strong>.`);
       lines.push(`<p>This resonance implies a semi-major axis of ${formatKm(bestClosest.semiMajorKm, 0)} km, which is ${formatKm(deltaAFromTarget, 0)} km from your target.</p>`);
       lines.push(`<p>Consider increasing your search tolerance to include this option.</p>`);
     } else {
@@ -1633,7 +1027,7 @@ async function applyResonanceCandidate(hit) {
   }
 
   if (elements.optSummary) {
-    elements.optSummary.textContent = `Applied resonance ${hit.j}:${hit.k} with a ≈ ${formatKm(hit.semiMajorKm, 3)} km.`;
+    elements.optSummary.textContent = `Applied resonance ${hit.j}:${hit.k} with a â‰ˆ ${formatKm(hit.semiMajorKm, 3)} km.`;
   }
 
   // Recompute the orbit with the new parameters
@@ -2036,14 +1430,14 @@ function bindEvents() {
         label.textContent = `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}`;
         const actions = document.createElement('div');
         const btnCenter = document.createElement('button');
-        btnCenter.textContent = '→';
+        btnCenter.textContent = 'â†’';
         btnCenter.title = 'Centrar mapa';
         btnCenter.style.marginRight = '6px';
         btnCenter.addEventListener('click', () => {
           if (map) map.setView([pt.lat, pt.lon], Math.max(map.getZoom(), 4));
         });
         const btnRemove = document.createElement('button');
-        btnRemove.textContent = '✖';
+        btnRemove.textContent = 'âœ–';
         btnRemove.title = 'Eliminar punto';
         btnRemove.addEventListener('click', () => {
           // remove marker on map and from state
@@ -2186,11 +1580,11 @@ function bindEvents() {
         };
 
         // non-blocking optimizer with progress and optional worker
-        if (elements.optStatus) elements.optStatus.textContent = 'Optimizando…';
+        if (elements.optStatus) elements.optStatus.textContent = 'Optimizandoâ€¦';
         if (elements.optProgress) { elements.optProgress.max = 1; elements.optProgress.value = 0; }
         if (elements.btnCancelOptimize) { elements.btnCancelOptimize.style.display = 'inline-block'; }
         let cancelRequested = false;
-        if (elements.btnCancelOptimize) elements.btnCancelOptimize.onclick = () => { cancelRequested = true; elements.optStatus.textContent = 'Cancelando…'; };
+        if (elements.btnCancelOptimize) elements.btnCancelOptimize.onclick = () => { cancelRequested = true; elements.optStatus.textContent = 'Cancelandoâ€¦'; };
 
         const useWorker = elements.workerToggle?.checked === true;
         // helper to compute positions for a candidate constellation. If worker enabled, use worker; otherwise compute on main thread
@@ -2342,14 +1736,14 @@ function bindEvents() {
             bestScore = score;
           }
           if (elements.optProgress) elements.optProgress.value = (it + 1) / iterations;
-          if (elements.optStatus) elements.optStatus.textContent = `Iter ${it + 1}/${iterations} — best ${Math.round(bestScore)} s`;
+          if (elements.optStatus) elements.optStatus.textContent = `Iter ${it + 1}/${iterations} â€” best ${Math.round(bestScore)} s`;
           // yield occasionally
           if ((it % batchSize) === 0) await new Promise((r) => setTimeout(r, 10));
         }
 
         if (elements.btnCancelOptimize) elements.btnCancelOptimize.style.display = 'none';
         if (cancelRequested) {
-          if (elements.optStatus) elements.optStatus.textContent = 'Optimización cancelada';
+          if (elements.optStatus) elements.optStatus.textContent = 'OptimizaciÃ³n cancelada';
           if (elements.optProgress) elements.optProgress.value = 0;
           return;
         }
@@ -2367,7 +1761,7 @@ function bindEvents() {
           });
           await recomputeOrbit(true);
         }
-        if (elements.optStatus) elements.optStatus.textContent = `Done — max revisit ${Number.isFinite(bestScoreObj.max) ? Math.round(bestScoreObj.max) : '∞'} s, mean ${Number.isFinite(bestScoreObj.mean) ? Math.round(bestScoreObj.mean) : '∞'} s`;
+        if (elements.optStatus) elements.optStatus.textContent = `Done â€” max revisit ${Number.isFinite(bestScoreObj.max) ? Math.round(bestScoreObj.max) : 'âˆž'} s, mean ${Number.isFinite(bestScoreObj.mean) ? Math.round(bestScoreObj.mean) : 'âˆž'} s`;
       } catch (err) {
         console.error('Optimization failed', err);
         if (elements.optStatus) elements.optStatus.textContent = 'Error during optimization';
@@ -2557,10 +1951,10 @@ function bindEvents() {
       const statusEl = document.getElementById('qkdStatus');
       if (statusEl) {
         if (results.secureKeyRate > 0) {
-          statusEl.textContent = `✓ QKD link established with ${results.protocol} protocol`;
+          statusEl.textContent = `âœ“ QKD link established with ${results.protocol} protocol`;
           statusEl.style.color = 'var(--accent-tertiary)';
         } else {
-          statusEl.textContent = `✗ QBER too high for secure key generation (${results.qber.toFixed(2)}%)`;
+          statusEl.textContent = `âœ— QBER too high for secure key generation (${results.qber.toFixed(2)}%)`;
           statusEl.style.color = 'var(--text-muted)';
         }
       }
@@ -2887,7 +2281,7 @@ async function loadConstellationGroup(groupId) {
   }
 
   setConstellationLoading(groupId, true);
-  setConstellationStatusMessage(`Loading ${config.label}…`, 'loading');
+  setConstellationStatusMessage(`Loading ${config.label}â€¦`, 'loading');
 
   try {
     const response = await fetch(`/api/tles/${encodeURIComponent(groupId)}`);
@@ -3036,7 +2430,7 @@ async function fetchWeatherFieldData() {
   syncWeatherSamplesInputs(samples);
   const button = elements.weatherFetchBtn;
   button.disabled = true;
-  setWeatherStatus('Fetching weather field…');
+  setWeatherStatus('Fetching weather fieldâ€¦');
 
   mutate((draft) => {
     draft.weather.variable = normalizedKey;
@@ -3546,7 +2940,7 @@ function showModalGraph(graphId) {
     elevation: {
       data: metrics.elevationDeg ?? [],
       title: 'Elevation vs Time',
-      yLabel: 'Station elevation (°)',
+      yLabel: 'Station elevation (Â°)',
       color: '#0ea5e9',
     },
     distance: {
@@ -3635,9 +3029,9 @@ function renderOrbitMessages() {
   if (requested && ratio) {
     const label = `${ratio.orbits}:${ratio.rotations}`;
     if (applied !== false) {
-      lines.push(`<p><strong>Resonance ${label}</strong> · ground track repeats after ${ratio.orbits} orbit(s).</p>`);
+      lines.push(`<p><strong>Resonance ${label}</strong> Â· ground track repeats after ${ratio.orbits} orbit(s).</p>`);
     } else {
-      lines.push(`<p><strong>Attempted resonance ${label}</strong> · adjust the parameters or review the warnings.</p>`);
+      lines.push(`<p><strong>Attempted resonance ${label}</strong> Â· adjust the parameters or review the warnings.</p>`);
       if (Number.isFinite(info?.deltaKm)) {
         lines.push(`<p>Current offset relative to the resonance: ${formatKm(info.deltaKm, 3)} km.</p>`);
       }
@@ -3663,9 +3057,9 @@ function renderOrbitMessages() {
     const gap = info.closureSurfaceKm;
     const closureText = gap < 0.01 ? '&lt; 0.01 km' : `${gap.toFixed(2)} km`;
     if (requested && info.closed) {
-      lines.push(`<p>✔️ Ground track closed (Δ ${closureText}).</p>`);
+      lines.push(`<p>âœ”ï¸ Ground track closed (Î” ${closureText}).</p>`);
     } else if (requested) {
-      lines.push(`<p class="warning">⚠️ Offset after resonance: ${closureText}</p>`);
+      lines.push(`<p class="warning">âš ï¸ Offset after resonance: ${closureText}</p>`);
     } else {
       lines.push(`<p>Ground-track closure: ${closureText}</p>`);
     }
@@ -3675,14 +3069,14 @@ function renderOrbitMessages() {
     const lat = info.latDriftDeg ?? 0;
     const lon = info.lonDriftDeg ?? 0;
     if (Math.abs(lat) > 1e-3 || Math.abs(lon) > 1e-3) {
-      lines.push(`<p>Cycle drift: Δlat ${lat.toFixed(3)}°, Δlon ${lon.toFixed(3)}°.</p>`);
+      lines.push(`<p>Cycle drift: Î”lat ${lat.toFixed(3)}Â°, Î”lon ${lon.toFixed(3)}Â°.</p>`);
     }
   }
 
   if (Array.isArray(info?.warnings)) {
     info.warnings.forEach((warning) => {
       if (warning) {
-        lines.push(`<p class="warning">⚠️ ${warning}</p>`);
+        lines.push(`<p class="warning">âš ï¸ ${warning}</p>`);
       }
     });
   }
@@ -3912,6 +3306,7 @@ function onStateChange(snapshot) {
 
 async function initialize() {
   cacheElements();
+  setWeatherElements(elements);
   initDefaults();
   initInfoButtons();
   // create collapsible panels for each section (guarded)

@@ -1,5 +1,10 @@
-// Worker for propagating satellites (keplerian + simple J2 secular rates)
-// This file runs in a Web Worker context and does not access DOM.
+// ---------------------------------------------------------------------------
+// app/static/propagateWorker.js
+// ---------------------------------------------------------------------------
+// Purpose : Web Worker for batch satellite propagation (Kepler + J2 secular
+//           rates).  Runs off the main thread so TLE constellation position
+//           updates don't block the UI.
+// ---------------------------------------------------------------------------
 const MU_EARTH = 398600.4418; // km^3/s^2
 const EARTH_RADIUS_KM = 6378.137;
 const EARTH_ROT_RATE = 7.2921150e-5;

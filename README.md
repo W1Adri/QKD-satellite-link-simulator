@@ -98,24 +98,64 @@ This software enables researchers and engineers to:
 ```
 QKD_EU_LINK_Simulator/
 ├── app/
-│   ├── main.py                    # FastAPI application factory
-│   ├── backend.py                 # API endpoints and routes
-│   ├── orbital_mechanics.py       # Orbital calculations (sun-sync, repeat tracks)
-│   ├── constellation_manager.py   # Constellation analysis with cosmica
-│   ├── templates/
-│   │   └── index.html             # Main HTML template
-│   ├── static/
-│   │   ├── main.js                # Application state management and UI logic
-│   │   ├── simulation.js          # Orbital propagation and QKD calculations
-│   │   ├── ui.js                  # 2D/3D visualization components
-│   │   ├── utils.js               # Utility functions and formatters
-│   │   ├── styles.css             # Application styling
-│   │   └── propagateWorker.js     # Web Worker for parallel computation
+│   ├── __init__.py                # Package initialisation
+│   ├── main.py                    # Uvicorn entry point
+│   ├── backend.py                 # FastAPI application factory & middleware
+│   ├── models.py                  # Pydantic request/response schemas
+│   ├── orbital_mechanics.py       # Sun-synchronous & repeat-track solvers
+│   ├── constellation_manager.py   # Walker constellation analysis (cosmica)
+│   ├── physics/                   # Pure-Python physics library
+│   │   ├── constants.py           #   Physical & orbital constants
+│   │   ├── kepler.py              #   Keplerian element conversions
+│   │   ├── propagation.py         #   Two-body & J2 propagation
+│   │   ├── geometry.py            #   Station geometry & link budget
+│   │   ├── atmosphere_models.py   #   HV-5/7, Bufton, Greenwood models
+│   │   ├── qkd.py                 #   BB84 / decoy-state QKD metrics
+│   │   └── walker.py              #   Walker-Delta constellation generator
+│   ├── services/                  # Business-logic services
+│   │   ├── database.py            #   SQLite async repository
+│   │   ├── ogs_store.py           #   Ground-station CRUD (JSON fallback)
+│   │   ├── atmosphere_svc.py      #   Atmospheric profile computation
+│   │   ├── weather_svc.py         #   Open-Meteo weather fetcher
+│   │   └── tle_service.py         #   CelesTrak TLE fetcher & parser
+│   ├── routers/                   # FastAPI route modules
+│   │   ├── pages.py               #   HTML page routes
+│   │   ├── ogs.py                 #   Ground-station CRUD API
+│   │   ├── atmosphere.py          #   Atmosphere profile API
+│   │   ├── orbital.py             #   Orbital-mechanics API
+│   │   ├── solver.py              #   Unified POST /api/solve endpoint
+│   │   ├── constellation.py       #   Constellation API
+│   │   ├── tles.py                #   TLE proxy API
+│   │   └── users.py               #   User-preferences API
+│   ├── templates/                 # Jinja2 HTML templates
+│   │   ├── dashboard.html         #   Default layout
+│   │   └── immersive.html         #   Minimal-chrome layout
+│   ├── static/                    # Frontend assets
+│   │   ├── app.js                 #   Template entry (imports main.js)
+│   │   ├── main.js                #   App coordinator, event binding, charts
+│   │   ├── state.js               #   Reactive state (pub/sub, mutations)
+│   │   ├── stations.js            #   OGS API helpers & built-in station list
+│   │   ├── formatters.js          #   Numeric display formatters
+│   │   ├── tooltips.js            #   Info-button tooltip manager
+│   │   ├── weather.js             #   Weather field config & DOM helpers
+│   │   ├── simulation.js          #   Physics facade (delegates to api.js)
+│   │   ├── ui.js                  #   Three.js 3D scene & Leaflet 2D map
+│   │   ├── api.js                 #   HTTP client for backend endpoints
+│   │   ├── utils.js               #   Shared utility functions
+│   │   ├── propagateWorker.js     #   Web Worker for parallel propagation
+│   │   ├── index.html             #   Legacy standalone HTML (fallback)
+│   │   ├── ogs_locations.json     #   Ground station persistence
+│   │   ├── styles/
+│   │   │   └── app.css            #   Application stylesheet
+│   │   └── data/
+│   │       └── europe_union.geojson  # EU border overlay
 │   └── data/
-│       └── ogs.json               # Ground station database
+│       └── app.sqlite3            # SQLite database
 ├── requirements.txt               # Python dependencies
-├── run_app.py                     # Application entry point
-└── README.md                      # This documentation
+├── run_app.py                     # Entry point (python run_app.py)
+├── manage.py                      # Database management CLI
+├── README.md                      # User manual (this file)
+└── ReadmeLogic.md                 # Technical architecture documentation
 ```
 
 ---
@@ -1100,46 +1140,119 @@ function updateGroundTrack(points) {
 
 ## Technical Architecture
 
+### Project Structure
+
+```
+app/
+├── backend.py              # FastAPI app factory (~69 lines)
+├── main.py                 # Uvicorn entry point
+├── models.py               # Pydantic request/response schemas
+├── orbital_mechanics.py    # Cosmica integration helpers
+├── constellation_manager.py# TLE constellation analysis
+│
+├── physics/                # All orbital & QKD maths
+│   ├── constants.py        # Physical constants (single source of truth)
+│   ├── kepler.py           # Kepler equation solver
+│   ├── propagation.py      # J2 orbit propagation, ECI↔ECEF
+│   ├── geometry.py         # LOS elevation, Doppler, geometric loss
+│   ├── qkd.py              # BB84 / decoy-state key-rate formulas
+│   ├── walker.py           # Walker-Delta constellation generator
+│   └── atmosphere_models.py# Cn² profiles (HV, Bufton, Greenwood)
+│
+├── services/               # Business-logic adapters
+│   ├── database.py         # SQLite gateway (users, chats)
+│   ├── ogs_store.py        # JSON persistence for OGS records
+│   ├── atmosphere_svc.py   # Atmosphere profile facade + Open-Meteo
+│   ├── weather_svc.py      # Gridded weather field builder
+│   └── tle_service.py      # CelesTrak TLE fetcher/cache
+│
+├── routers/                # One router per domain
+│   ├── pages.py            # HTML page serving
+│   ├── ogs.py              # OGS CRUD
+│   ├── atmosphere.py       # Cn² profiles & weather fields
+│   ├── orbital.py          # Sun-sync, Walker, repeat track
+│   ├── users.py            # Auth & chat
+│   ├── tles.py             # TLE group listing/fetching
+│   ├── constellation.py    # Constellation analysis/propagation
+│   └── solver.py           # POST /api/solve (unified pipeline)
+│
+├── templates/              # Jinja2 HTML layouts
+│   ├── dashboard.html
+│   └── immersive.html
+│
+└── static/
+    ├── app.js              # Entry point for template variants
+    ├── main.js             # App coordinator, events, lifecycle
+    ├── state.js            # Reactive state (pub/sub, mutations)
+    ├── stations.js         # OGS API helpers & built-in list
+    ├── formatters.js       # Numeric display formatters
+    ├── tooltips.js         # Info-button tooltip manager
+    ├── weather.js          # Weather field config & helpers
+    ├── simulation.js       # Facade (delegates physics to backend)
+    ├── ui.js               # Three.js + Leaflet rendering
+    ├── api.js              # HTTP client for all endpoints
+    ├── utils.js            # Math helpers, formatting
+    ├── propagateWorker.js  # Web Worker for TLE propagation
+    ├── index.html          # Legacy standalone HTML
+    └── styles/app.css      # Application stylesheet
+```
+
+### Design Principles
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Physics in backend only** | All orbital, atmospheric and QKD computations live in `app/physics/`. The frontend `simulation.js` is a thin façade. |
+| **File size ≤ 250 lines** | Every new Python module stays within the 200-300 line budget. Legacy JS files are documented for further decomposition. |
+| **Single source of truth** | Physical constants defined once in `physics/constants.py`. |
+| **Unified solver** | `POST /api/solve` orchestrates: propagation → station metrics → QKD. |
+
 ### Backend (Python/FastAPI)
 
-**Files and Responsibilities:**
-
-| File | Purpose |
-|------|---------|
-| `main.py` | Application factory, creates FastAPI app |
-| `backend.py` | API routes and endpoints |
-| `orbital_mechanics.py` | Sun-sync, repeat track calculations |
-| `constellation_manager.py` | Cosmica integration for TLE analysis |
+| Layer | Files | Responsibility |
+|-------|-------|----------------|
+| **App factory** | `backend.py` | Wire services, mount routers, serve static files |
+| **Routers** | `routers/*.py` | HTTP interface, validation, error mapping |
+| **Services** | `services/*.py` | Business logic, caching, external APIs |
+| **Physics** | `physics/*.py` | Pure functions, no I/O, fully testable |
+| **Models** | `models.py` | Pydantic schemas for requests/responses |
 
 ### Frontend (JavaScript ES Modules)
 
 **Module Structure:**
 
-| Module | Purpose | Key Exports |
-|--------|---------|-------------|
-| `main.js` | State management, event handling | `initialize()` |
-| `simulation.js` | Orbital propagation, QKD calculations | `orbit`, `walkerGenerator`, `qkdCalculations` |
-| `ui.js` | 2D/3D visualization | `map2d`, `scene3d` |
-| `utils.js` | Utility functions | `haversineDistance`, `formatters` |
+| Module | Lines | Purpose | Key Exports |
+|--------|-------|---------|-------------|
+| `app.js` | 8 | Entry point for template variants | Imports `main.js` |
+| `main.js` | ~3100 | App coordinator, events, charts, lifecycle | `initialize()` |
+| `state.js` | 313 | Reactive state (pub/sub, mutations) | `state`, `subscribe`, `mutate`, `emit` |
+| `stations.js` | 113 | Built-in OGS list & CRUD helpers | `loadStationsFromServer`, `persistStation` |
+| `formatters.js` | 104 | Numeric display formatters | `formatR0Meters`, `normalizeLongitude`, … |
+| `tooltips.js` | 144 | Info-button tooltip manager | `initInfoButtons` |
+| `weather.js` | 124 | Weather field config & DOM helpers | `WEATHER_FIELDS`, `setWeatherElements` |
+| `simulation.js` | 418 | Physics facade (delegates to api.js) | `orbit`, `walkerGenerator`, `qkdCalculations` |
+| `ui.js` | 2520 | Three.js 3D scene & Leaflet 2D map | `map2d`, `scene3d` |
+| `api.js` | 110 | HTTP client for all endpoints | `api.*` (solve, listOGS, …) |
+| `utils.js` | 206 | Math/format utility functions | `haversineDistance`, `formatAngle`, … |
+| `propagateWorker.js` | 161 | Web Worker for TLE propagation | (postMessage interface) |
 
 ### State Management
 
-The application uses a simple publish/subscribe pattern:
+The application uses a publish/subscribe pattern implemented in `state.js`:
 
 ```javascript
-const state = { ... };
+// state.js — reactive state container
+import { isoNowLocal } from './utils.js';
+
+const state = { ... };          // single mutable state tree
 const listeners = new Set();
 
-function subscribe(listener) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function mutate(mutator) {
-  mutator(state);
-  listeners.forEach(listener => listener(state));
-}
+export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+export function emit()         { listeners.forEach(fn => fn(state)); }
+export function mutate(fn)     { fn(state); emit(); }
 ```
+
+Higher-level mutations (`setTheme`, `setComputed`, `togglePlay`, …) are also
+exported from `state.js` and imported by `main.js`.
 
 ### Coordinate Systems
 
@@ -1164,6 +1277,37 @@ Orbital Elements → Perifocal → ECI → ECEF → Geographic
 ---
 
 ## API Reference
+
+### Unified Solver (main pipeline)
+
+```
+POST /api/solve
+Content-Type: application/json
+
+{
+  "semi_major_axis_km": 6878.0,
+  "eccentricity": 0.001,
+  "inclination_deg": 53.0,
+  "raan_deg": 0.0,
+  "arg_perigee_deg": 0.0,
+  "mean_anomaly_deg": 0.0,
+  "station_lat": 40.4,
+  "station_lon": -3.7,
+  "station_alt_m": 650,
+  "aperture_m": 1.0,
+  "wavelength_nm": 810,
+  "detector_efficiency": 0.1,
+  "dark_count_rate": 100,
+  "pointing_error_urad": 2.0,
+  "protocol": "bb84",
+  "cn2_model": "hufnagel-valley",
+  "ground_cn2": 1.7e-14,
+  "wind_speed_rms": 21.0,
+  "duration_s": 600,
+  "dt_s": 1.0
+}
+```
+Returns: propagated orbit + station metrics + QKD key rates.
 
 ### Health Check
 
@@ -1354,6 +1498,7 @@ The following features are planned for future versions but are **not yet impleme
 
 ### Planned Enhancements
 
+- Decompose `main.js` (4 k lines) and `ui.js` (2.7 k lines) into ≤ 250-line ES modules
 - Multi-segment ground tracks with segment coloring
 - Satellite collision analysis
 - Ground coverage heat maps
@@ -1368,11 +1513,13 @@ The following features are planned for future versions but are **not yet impleme
 
 When adding new features:
 
-1. Add backend calculations to `app/backend.py` or create new modules
-2. Add frontend logic to `app/static/simulation.js`
-3. Update visualization in `app/static/ui.js`
-4. Add state management in `app/static/main.js`
-5. Update this README with documentation
+1. **Physics** → add pure functions to `app/physics/` (keep each module ≤ 250 lines)
+2. **External I/O** → add or extend a service in `app/services/`
+3. **HTTP endpoint** → add a router in `app/routers/`; include Pydantic models in `app/models.py`
+4. **Frontend API call** → add a method to `app/static/api.js`
+5. **Visualization** → update `app/static/ui.js`
+6. **State / lifecycle** → update `app/static/main.js`
+7. Update this README with documentation
 
 ---
 
