@@ -1610,43 +1610,61 @@ const GROUND_TRACK_ALTITUDE_KM = 0.05;
 
 const EARTH_VERTEX_SHADER = `
   varying vec2 vUv;
-  varying vec3 vNormal;
+  varying vec3 vViewNormal;
   void main() {
     vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
-    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    // normalMatrix = upper-3x3 of inverse(transpose(modelViewMatrix))
+    // Gives us the surface normal in VIEW space, correctly including
+    // all parent-group transforms (earthGroup rotation = GMST).
+    vViewNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
 const EARTH_FRAGMENT_SHADER = `
   uniform sampler2D dayMap;
   uniform sampler2D nightMap;
-  uniform vec3 sunDirection;
+  uniform vec3 sunDirection;       // world-space Sun direction
   uniform float ambientStrength;
   uniform float nightStrength;
   varying vec2 vUv;
-  varying vec3 vNormal;
+  varying vec3 vViewNormal;
 
   vec3 toneMap(vec3 color) {
     return color / (color + vec3(1.0));
   }
 
   void main() {
-    vec3 normal = normalize(vNormal);
-    vec3 lightDir = normalize(sunDirection);
-    float diffuse = max(dot(normal, lightDir), 0.0);
+    vec3 normal = normalize(vViewNormal);                   // view space
+    // Transform sunDirection from world space → view space so both
+    // vectors are in the same frame.  The dot product is rotation-
+    // invariant, so the result equals the world-space dot product
+    // but now correctly picks up earthGroup (GMST) rotation via
+    // normalMatrix / modelViewMatrix.
+    vec3 lightDir = normalize((viewMatrix * vec4(sunDirection, 0.0)).xyz);  // view space
+    float NdotL = dot(normal, lightDir);
+    float diffuse = max(NdotL, 0.0);
     vec2 sampleUv = vUv;
     vec3 dayColor = texture2D(dayMap, sampleUv).rgb;
     vec3 nightColor = texture2D(nightMap, sampleUv).rgb;
 
-    float dayMix = smoothstep(-0.2, 0.45, diffuse);
-    vec3 lit = dayColor * (ambientStrength + diffuse);
-    vec3 night = nightColor * nightStrength * (1.0 - dayMix);
+    // Sharper terminator: narrow transition band
+    float dayMix = smoothstep(-0.08, 0.2, NdotL);
+
+    // Sunlit side: warm tint + strong illumination
+    vec3 warmTint = vec3(1.05, 0.98, 0.88);
+    vec3 lit = dayColor * warmTint * (ambientStrength + diffuse * 1.4);
+
+    // Night side: dark with city lights visible
+    vec3 night = nightColor * nightStrength * 0.7;
+
+    // Mix day and night
     vec3 color = mix(night, lit, dayMix);
 
-    float rim = pow(1.0 - max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
-    color += vec3(rim) * 0.04;
+    // Subtle atmosphere rim glow on the sunlit limb
+    float rim = pow(1.0 - max(NdotL, 0.0), 3.5);
+    vec3 rimColor = mix(vec3(0.1, 0.15, 0.3), vec3(0.5, 0.7, 1.0), dayMix);
+    color += rimColor * rim * 0.08;
 
     gl_FragColor = vec4(toneMap(color), 1.0);
   }
@@ -1666,6 +1684,8 @@ let controls;
 let resizeObserver;
 let animationHandle;
 let earthGroup;
+let earthSystemGroup;      // Top-level group for heliocentric mode — moves to Earth's orbit position
+let earthOrbitLine;        // Visualisation of Earth's orbital path around the Sun
 let earthMesh;
 let atmosphereMesh;
 let orbitLine;
@@ -1720,7 +1740,9 @@ function createConstellationSatelliteMesh(satellite, color, groupId) {
     mesh = new THREE.Mesh(new THREE.SphereGeometry(0.03, 20, 20), material);
     mesh.name = `constellation-sat-${key}`;
     constellationSatelliteMeshes.set(key, mesh);
-    scene.add(mesh); // Add to scene here
+    // Add to earthSystemGroup so meshes move with Earth in helio mode
+    const parent = earthSystemGroup || scene;
+    parent.add(mesh);
   }
   // No need to set position here, will be set in renderConstellations3D
   mesh.material.color.set(color);
@@ -1806,7 +1828,8 @@ function updateConstellationGroundTrackVector3D(satelliteId, satEci, groundTrack
         );
         line.name = `constellation-groundtrack-vector-${key}`;
         constellationGroundTrackVectorLines.set(key, line);
-        scene.add(line);
+        const parent = earthSystemGroup || scene;
+        parent.add(line);
     }
     
     if (satEci && groundTrackEci) {
@@ -1888,8 +1911,10 @@ function buildRenderer() {
 function buildCamera() {
   const width = Math.max(containerEl.clientWidth, 1);
   const height = Math.max(containerEl.clientHeight, 1);
-  camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 80);
-  camera.position.set(0.4, 3, 4.8);
+  camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 400);
+  // Default position along the initial sunLight direction so the lit face is visible
+  const sunDir = new THREE.Vector3(4, 6, 10).normalize();
+  camera.position.copy(sunDir.multiplyScalar(5));
 }
 
 function buildControls() {
@@ -2018,6 +2043,10 @@ export function createPanelAccordions() {
 }
 
 async function buildEarth() {
+  // ── EarthSystem group (top-level, positioned at Earth's heliocentric pos) ──
+  earthSystemGroup = new THREE.Group();
+  earthSystemGroup.name = 'EarthSystem';
+
   earthGroup = new THREE.Group();
   earthGroup.name = 'EarthGroup';
 
@@ -2051,6 +2080,8 @@ async function buildEarth() {
     uniforms: earthUniforms,
     vertexShader: EARTH_VERTEX_SHADER,
     fragmentShader: EARTH_FRAGMENT_SHADER,
+    transparent: false,             // ← opaque: stars cannot bleed through
+    depthWrite: true,
   });
   earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
   earthMesh.name = 'Earth';
@@ -2062,12 +2093,30 @@ async function buildEarth() {
     transparent: true,
     opacity: 0.16,
     side: THREE.BackSide,
+    depthWrite: false,              // ← don't interfere with Earth depth
   });
   atmosphereMesh = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
   atmosphereMesh.name = 'Atmosphere';
   earthGroup.add(atmosphereMesh);
 
-  scene.add(earthGroup);
+  earthSystemGroup.add(earthGroup);
+  scene.add(earthSystemGroup);
+
+  // ── Earth orbit line (heliocentric mode) ─────────────────────────────
+  earthOrbitLine = new THREE.Line(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: 0x334155,
+      linewidth: 1,
+      transparent: true,
+      opacity: 0.45,
+    })
+  );
+  earthOrbitLine.name = 'EarthOrbitLine';
+  earthOrbitLine.visible = false;
+  earthOrbitLine.frustumCulled = false;
+  scene.add(earthOrbitLine);
+
   updateSunDirection();
 }
 
@@ -2104,7 +2153,7 @@ function buildSceneGraph() {
     })
   );
   groundTrackVectorLine.visible = false;
-  scene.add(groundTrackVectorLine);
+  earthSystemGroup.add(groundTrackVectorLine);
 
   const satMaterial = new THREE.MeshStandardMaterial({
     color: 0xf97316,
@@ -2120,6 +2169,9 @@ function buildSceneGraph() {
   earthGroup.add(stationGroup);
 
   scene.add(orbitLine, linkLine, satelliteMesh);
+  // NOTE: orbitLine, linkLine, satelliteMesh stay in scene root for now.
+  // They use world-space ECI coordinates.  In helio mode we re-parent them
+  // into earthSystemGroup (see setHelioMode).
 }
 
 function startAnimation() {
@@ -2132,6 +2184,10 @@ function startAnimation() {
     if (atmosphereMesh) {
       passiveAtmosphereOffset = (passiveAtmosphereOffset + 0.003) % (Math.PI * 2);
       atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset + EARTH_BASE_ROTATION;
+    }
+    // Camera target follows earthSystemGroup (helio mode moves it; orbit mode keeps 0,0,0)
+    if (controls && earthSystemGroup) {
+      controls.target.copy(earthSystemGroup.position);
     }
     controls?.update();
     renderer.render(scene, camera);
@@ -2330,7 +2386,7 @@ async function initScene(container) {
     await ensureThree();
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020617);
+    scene.background = new THREE.Color(0x000005);   // near-black; starfield adds visible stars
 
     buildRenderer();
     buildCamera();
@@ -2338,6 +2394,10 @@ async function initScene(container) {
     buildLights();
     await buildEarth();
     buildSceneGraph();
+
+    // Solar scene: starfield + sun sprite + lighting hookup
+    const { initSolarScene } = await import('./solar.js');
+    initSolarScene(THREE, scene, sunLight, earthUniforms);
 
     resizeObserver = new ResizeObserver(() => resizeRenderer());
     resizeObserver.observe(containerEl);
@@ -2427,8 +2487,13 @@ function updateLink3D(point, station, elevationDeg = null) {
     linkLine.visible = false;
     return;
   }
+  earthSystemGroup?.updateMatrixWorld(true);
   earthGroup?.updateMatrixWorld(true);
   const ground = mesh.getWorldPosition(new THREE.Vector3());
+  // When in helio mode linkLine lives inside earthSystemGroup → need local coords
+  if (_helioActive && earthSystemGroup) {
+    earthSystemGroup.worldToLocal(ground);
+  }
   linkLine.geometry.dispose();
   linkLine.geometry = new THREE.BufferGeometry().setFromPoints([ground, sat]);
   if (typeof linkLine.computeLineDistances === 'function') {
@@ -2444,16 +2509,17 @@ function updateLink3D(point, station, elevationDeg = null) {
 
 function setTheme(nextTheme) {
   if (!scene || !renderer) return;
+  // Keep near-black background so the procedural starfield is always visible.
+  // Only tune the earth shader ambient / night strengths for each theme.
+  const spaceBg = 0x000005;
+  scene.background.setHex(spaceBg);
+  renderer.setClearColor(spaceBg, 1);
   if (nextTheme === 'dark') {
-    scene.background.setHex(0x020617);
-    renderer.setClearColor(0x020617, 1);
     if (earthUniforms) {
       earthUniforms.ambientStrength.value = 0.3;
       earthUniforms.nightStrength.value = 1.05;
     }
   } else {
-    scene.background.setHex(0xf4f7fb);
-    renderer.setClearColor(0xf4f7fb, 1);
     if (earthUniforms) {
       earthUniforms.ambientStrength.value = 0.4;
       earthUniforms.nightStrength.value = 0.85;
@@ -2489,9 +2555,17 @@ function disposeScene() {
 
   earthGroup?.remove(groundTrackLine);
   earthGroup?.remove(stationGroup);
+  earthSystemGroup?.remove(earthGroup);
+  earthSystemGroup?.remove(groundTrackVectorLine);
+  scene?.remove(earthSystemGroup);
+  scene?.remove(earthOrbitLine);
   scene?.remove(orbitLine);
   scene?.remove(linkLine);
   scene?.remove(satelliteMesh);
+  // Also check earthSystemGroup in case helio mode re-parented them
+  earthSystemGroup?.remove(orbitLine);
+  earthSystemGroup?.remove(linkLine);
+  earthSystemGroup?.remove(satelliteMesh);
   scene?.remove(groundTrackVectorLine);
 
   orbitLine?.geometry?.dispose();
@@ -2512,6 +2586,8 @@ function disposeScene() {
   camera = null;
   controls = null;
   earthGroup = null;
+  earthSystemGroup = null;
+  earthOrbitLine = null;
   earthMesh = null;
   atmosphereMesh = null;
   orbitLine = null;
@@ -2546,7 +2622,8 @@ function ensureConstellationEntry(groupId, color) {
     });
     const points = new THREE.Points(geometry, material);
     points.name = `constellation-${groupId}`;
-    scene.add(points);
+    const cParent = earthSystemGroup || scene;
+    cParent.add(points);
     entry = { geometry, material, points };
     constellationPoints.set(groupId, entry);
   } else if (color) {
@@ -2605,6 +2682,7 @@ function renderConstellations3D(groupId, satellites, options = {}) {
     if (key.startsWith(`${groupId}-`) && !currentMeshes.has(key)) {
       const mesh = constellationSatelliteMeshes.get(key);
       if (mesh) {
+        earthSystemGroup?.remove(mesh);
         scene.remove(mesh);
         mesh.geometry.dispose();
         mesh.material.dispose();
@@ -2642,6 +2720,7 @@ function renderConstellations3D(groupId, satellites, options = {}) {
     if (key.startsWith(`${groupId}-`) && !currentGroundTrackVectorLines.has(key)) {
       const line = constellationGroundTrackVectorLines.get(key);
       if (line) {
+        earthSystemGroup?.remove(line);
         scene.remove(line);
         line.geometry.dispose();
         line.material.dispose();
@@ -2657,6 +2736,7 @@ function clearConstellation(groupId) {
     if (key.startsWith(`${groupId}-`)) {
       const mesh = constellationSatelliteMeshes.get(key);
       if (mesh) {
+        earthSystemGroup?.remove(mesh);
         scene.remove(mesh);
         mesh.geometry.dispose();
         mesh.material.dispose();
@@ -2694,6 +2774,7 @@ function clearConstellation(groupId) {
     if (key.startsWith(`${groupId}-`)) {
       const line = constellationGroundTrackVectorLines.get(key);
       if (line) {
+        earthSystemGroup?.remove(line);
         scene.remove(line);
         line.geometry.dispose();
         line.material.dispose();
@@ -2701,6 +2782,105 @@ function clearConstellation(groupId) {
       }
     }
   });
+}
+
+/**
+ * Update the sun direction (light + earth shader uniform) from a
+ * Three.js-space direction vector [tx, ty, tz].  Called by main.js
+ * via the solar module.
+ */
+function updateSolarLighting(tx, ty, tz) {
+  if (_helioActive && earthSystemGroup) {
+    // In helio mode the Sun is at the origin.
+    // sunLight should illuminate Earth → place it at origin pointing toward earthSystemGroup
+    if (sunLight) {
+      sunLight.position.set(0, 0, 0);
+      sunLight.target = earthSystemGroup;
+    }
+  } else {
+    if (sunLight) sunLight.position.set(tx * 10, ty * 10, tz * 10);
+  }
+  if (earthUniforms?.sunDirection) {
+    earthUniforms.sunDirection.value.set(tx, ty, tz).normalize();
+  }
+  // Auto-position camera so the user sees the sunlit hemisphere
+  if (!hasUserMovedCamera && camera && controls) {
+    const d = camera.position.length() || 5;
+    const dir = new THREE.Vector3(tx, ty, tz).normalize();
+    camera.position.copy(dir.multiplyScalar(d));
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+}
+
+// ── Heliocentric mode helpers ─────────────────────────────────────────────
+
+const AU_TO_SCENE = 50;  // 1 AU → 50 scene units (artistic scale)
+
+let _helioActive = false;
+
+/**
+ * Convert an ECI-AU position [x,y,z] to Three.js scene coordinates using
+ * the heliocentric scale.  Same axis mapping as toVector3: tx=x, ty=z, tz=-y.
+ */
+function helioToThreeVec(posAU) {
+  if (!THREE || !Array.isArray(posAU)) return null;
+  const [x, y, z] = posAU;
+  return new THREE.Vector3(x * AU_TO_SCENE, z * AU_TO_SCENE, -y * AU_TO_SCENE);
+}
+
+/**
+ * Switch the scene graph between orbit (Earth-centred) and heliocentric
+ * (Sun-centred) modes.  Moves orbitLine / satelliteMesh / linkLine in or
+ * out of earthSystemGroup.
+ */
+function setHelioMode(active) {
+  if (!isReady || active === _helioActive) return;
+  _helioActive = active;
+
+  const objs = [orbitLine, satelliteMesh, linkLine].filter(Boolean);
+  if (active) {
+    // Re-parent into earthSystemGroup so they move with Earth
+    objs.forEach((o) => { scene.remove(o); earthSystemGroup.add(o); });
+    // Increase camera far plane for orbit-wide view
+    if (camera) { camera.far = 800; camera.updateProjectionMatrix(); }
+    if (controls) { controls.maxDistance = 500; }
+    if (earthOrbitLine) earthOrbitLine.visible = true;
+  } else {
+    // Move back to scene root
+    objs.forEach((o) => { earthSystemGroup.remove(o); scene.add(o); });
+    // Reset earthSystemGroup position to origin
+    if (earthSystemGroup) earthSystemGroup.position.set(0, 0, 0);
+    if (camera) { camera.far = 400; camera.updateProjectionMatrix(); }
+    if (controls) { controls.maxDistance = 200; }
+    if (earthOrbitLine) earthOrbitLine.visible = false;
+  }
+}
+
+/**
+ * Set Earth's heliocentric position for the current timestep.
+ * `posAU` is [x,y,z] in AU (J2000 ECI equatorial) from the backend.
+ */
+function setEarthHelioPosition(posAU) {
+  if (!earthSystemGroup || !posAU) return;
+  const v = helioToThreeVec(posAU);
+  if (v) earthSystemGroup.position.copy(v);
+}
+
+/**
+ * Build / update the Earth orbit path visualisation from an array of
+ * heliocentric positions (AU, ECI).
+ */
+function updateEarthOrbitPath(positionsAU) {
+  if (!earthOrbitLine || !Array.isArray(positionsAU) || positionsAU.length < 2) return;
+  const vecs = positionsAU.map((p) => helioToThreeVec(p)).filter(Boolean);
+  if (vecs.length < 2) return;
+  const closed = vecs[0].distanceTo(vecs[vecs.length - 1]) < 0.5;
+  const curve = new THREE.CatmullRomCurve3(vecs, closed, 'centripetal', 0.5);
+  const pts = curve.getPoints(Math.min(2048, vecs.length * 4));
+  earthOrbitLine.geometry.dispose();
+  earthOrbitLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  earthOrbitLine.visible = true;
 }
 
 export const scene3d = {
@@ -2717,4 +2897,9 @@ export const scene3d = {
   disposeScene,
   renderConstellations: renderConstellations3D,
   clearConstellation,
+  updateSolarLighting,
+  // Heliocentric mode
+  setHelioMode,
+  setEarthHelioPosition,
+  updateEarthOrbitPath,
 };

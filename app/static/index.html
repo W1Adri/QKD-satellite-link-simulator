@@ -1031,6 +1031,31 @@
 
         <div class="timeline-panel">
           <div class="timeline-controls">
+            <div class="scene-mode-control">
+              <label for="sceneModeSelect">Mode</label>
+              <select id="sceneModeSelect" class="speed-select">
+                <option value="orbit" selected>Orbit</option>
+                <option value="helio">Sun-centred</option>
+              </select>
+            </div>
+            <div class="helio-controls" id="helioControls" style="display:none;">
+              <label for="helioInterval">Interval</label>
+              <select id="helioInterval" class="speed-select">
+                <option value="3600">1 h</option>
+                <option value="86400" selected>1 day</option>
+                <option value="604800">1 week</option>
+                <option value="31536000">1 year</option>
+              </select>
+              <label for="helioStep">Step</label>
+              <select id="helioStep" class="speed-select">
+                <option value="300">5 min</option>
+                <option value="600">10 min</option>
+                <option value="3600" selected>1 h</option>
+                <option value="7200">2 h</option>
+                <option value="86400">1 day</option>
+              </select>
+              <span id="helioSampleCount" class="info-value" style="font-size:0.75rem;opacity:0.7;"></span>
+            </div>
             <button id="btnPlay" class="time-btn" title="Play">▶</button>
             <button id="btnPause" class="time-btn" title="Pause">⏸</button>
             <button id="btnStepBack" class="time-btn" title="Step back">⏪</button>

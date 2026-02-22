@@ -118,6 +118,20 @@ export async function postChat(userId, message) {
   return _post('/api/chats', { user_id: userId, message });
 }
 
+// ── Solar ephemeris ─────────────────────────────────────────────────────
+export async function fetchSolar(epochIso, tOffsetsS) {
+  return _post('/api/solar', { epoch_iso: epochIso, t_offsets_s: tOffsetsS });
+}
+
+// ── Scene timeline (heliocentric mode) ─────────────────────────────────
+export async function fetchSceneTimeline(epochIso, intervalS, stepS) {
+  return _post('/api/scene-timeline', {
+    epoch_iso: epochIso,
+    interval_s: intervalS,
+    step_s: stepS,
+  });
+}
+
 // ── Health ──────────────────────────────────────────────────────────────
 export async function health() { return _get('/health'); }
 
@@ -128,6 +142,8 @@ export const api = {
   listTLEGroups, fetchTLEGroup,
   analyzeConstellation, propagateConstellation, getConstellationCoverage,
   getSunSynchronous, getWalkerConstellation, getRepeatGroundTrack,
+  fetchSolar,
+  fetchSceneTimeline,
   login, logout, getUserCount,
   listChats, postChat, health,
 };

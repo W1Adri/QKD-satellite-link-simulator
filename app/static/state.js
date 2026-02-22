@@ -11,6 +11,7 @@
 //           setTheme, setVariant, ensureStationSelected,
 //           upsertStation, removeStation, removeStations, selectStation,
 //           setTimeline, setComputed, togglePlay, setTimeIndex, setTimeWarp,
+//           setSceneMode, setHelioInterval, setHelioStep,
 //           withConstellationGroup, setConstellationEnabled,
 //           setConstellationLoading, setConstellationMetadata,
 //           setConstellationError, createDefaultConstellationState
@@ -94,6 +95,11 @@ export const defaultState = {
     status: 'idle',
   },
   samplesPerOrbit: 180,
+  sceneMode: 'orbit',            // 'orbit' (Earth-centred) | 'helio' (Sun-centred annual)
+  helio: {
+    interval: 86400,             // total interval in seconds (default 1 day)
+    step: 3600,                  // step size in seconds (default 1 hour)
+  },
   time: {
     playing: false,
     timeWarp: 60,
@@ -287,6 +293,27 @@ export function setTimeIndex(index) {
 export function setTimeWarp(value) {
   mutate((draft) => {
     draft.time.timeWarp = value;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Heliocentric mode helpers
+// ─────────────────────────────────────────────────────────────────────────────
+export function setSceneMode(mode) {
+  mutate((draft) => {
+    draft.sceneMode = mode;  // 'orbit' | 'helio'
+  });
+}
+
+export function setHelioInterval(intervalS) {
+  mutate((draft) => {
+    draft.helio.interval = intervalS;
+  });
+}
+
+export function setHelioStep(stepS) {
+  mutate((draft) => {
+    draft.helio.step = stepS;
   });
 }
 

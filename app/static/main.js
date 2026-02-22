@@ -26,6 +26,7 @@ import {
   setTheme, setVariant, ensureStationSelected,
   upsertStation, removeStation, removeStations, selectStation,
   setTimeline, setComputed, togglePlay, setTimeIndex, setTimeWarp,
+  setSceneMode, setHelioInterval, setHelioStep,
   withConstellationGroup, setConstellationEnabled,
   setConstellationLoading, setConstellationMetadata, setConstellationError,
   createDefaultConstellationState
@@ -50,6 +51,8 @@ import {
 } from './weather.js';
 import { orbit, resonanceSolver, walkerGenerator, qkdCalculations } from './simulation.js';
 import { map2d, scene3d, initSliders, createPanelAccordions } from './ui.js';
+import { fetchSolarData, updateSolarFromBackend, getSolarData, clearSolarData, setSolarHelioMode } from './solar.js';
+import { fetchSceneTimeline } from './api.js';
 
 const { constants: orbitConstants } = orbit;
 const { searchResonances, periodFromA, aFromPeriod } = resonanceSolver;
@@ -88,6 +91,11 @@ const {
   updateGroundTrackVector,
   renderConstellations: renderConstellations3D,
   clearConstellation: clearConstellation3D,
+  // Heliocentric mode
+  setHelioMode: setSceneHelioMode,
+  setEarthHelioPosition,
+  updateEarthOrbitPath,
+  updateSolarLighting,
 } = scene3d;
 
 const { EARTH_RADIUS_KM, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR } = orbitConstants;
@@ -108,6 +116,7 @@ let hasMapBeenFramed = false;
 let hasSceneBeenFramed = false;
 let modalChartInstance = null;
 let stationPickCleanup = null;
+let _sceneTimelineData = null;     // cached scene-timeline response for helio mode
 const stationDialogDragState = {
   active: false,
   startX: 0,
@@ -319,7 +328,7 @@ function cacheElements() {
     'satAperture', 'satApertureSlider', 'groundAperture', 'groundApertureSlider', 'wavelength',
     'wavelengthSlider', 'samplesPerOrbit', 'samplesPerOrbitSlider', 'timeSlider', 'btnPlay', 'btnPause',
     'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnPanelToggle',
-  'btnMapStyle', 'panelResizer', 'stationSelect', 'btnAddStation', 'btnDeleteStation', 'btnFocusStation', 'timeLabel', 'btnMenuToggle',
+  'btnMapStyle', 'panelResizer', 'stationSelect', 'btnAddStation', 'btnDeleteStation', 'btnFocusStation', 'timeLabel', 'totalDurationLabel', 'btnMenuToggle',
     'elevationLabel', 'lossLabel', 'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric',
     'dopplerMetric', 'threeContainer', 'mapContainer', 'orbitMessages',
     'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave', 'stationCancel',
@@ -337,6 +346,8 @@ function cacheElements() {
     'darkCountRate', 'darkCountRateSlider', 'opticalFilterBandwidth', 'opticalFilterBandwidthSlider',
     'btnCalculateQKD', 'qkdStatus', 'qberMetric', 'rawKeyRateMetric', 'secureKeyRateMetric', 'channelTransmittanceMetric',
     'j2Toggle',
+    // Heliocentric mode controls
+    'sceneModeSelect', 'helioControls', 'helioInterval', 'helioStep', 'helioSampleCount',
   ];
   ids.forEach((id) => {
     elements[id] = document.getElementById(id);
@@ -1988,6 +1999,22 @@ function bindEvents() {
   elements.timeSlider?.addEventListener('input', (event) => setTimeIndex(Number(event.target.value)));
   elements.timeWarp?.addEventListener('change', (event) => setTimeWarp(Number(event.target.value)));
 
+  // ── Heliocentric mode controls ──────────────────────────────────────
+  elements.sceneModeSelect?.addEventListener('change', (e) => {
+    const mode = e.target.value;  // 'orbit' | 'helio'
+    setSceneMode(mode);
+  });
+  elements.helioInterval?.addEventListener('change', (e) => {
+    setHelioInterval(Number(e.target.value));
+    updateHelioSampleHint();
+    recomputeHelioTimeline();
+  });
+  elements.helioStep?.addEventListener('change', (e) => {
+    setHelioStep(Number(e.target.value));
+    updateHelioSampleHint();
+    recomputeHelioTimeline();
+  });
+
   elements.viewTabs?.forEach((tab) => {
     tab.addEventListener('click', () => {
       const mode = tab.dataset.view;
@@ -2491,7 +2518,77 @@ async function fetchWeatherFieldData() {
   }
 }
 
+// ── Heliocentric mode helpers ─────────────────────────────────────────────
+
+/** Update the "N samples" hint next to the helio controls. */
+function updateHelioSampleHint() {
+  const el = elements.helioSampleCount;
+  if (!el) return;
+  const interval = state.helio.interval;
+  const step = state.helio.step;
+  const n = Math.min(10000, Math.floor(interval / step) + 1);
+  el.textContent = `(${n} samples)`;
+}
+
+/** Fetch the heliocentric scene timeline from the backend and apply it. */
+async function recomputeHelioTimeline() {
+  try {
+    const data = await fetchSceneTimeline(
+      state.epoch,
+      state.helio.interval,
+      state.helio.step,
+    );
+    if (!data) return;
+    _sceneTimelineData = data;
+
+    // Build a compatible timeline array (seconds offsets)
+    const offsets = data.t_offsets_s;
+    const totalSeconds = offsets.length > 0 ? offsets[offsets.length - 1] : 0;
+    setTimeline({ timeline: offsets, totalSeconds });
+
+    // Build Earth orbit path visualisation
+    updateEarthOrbitPath(data.earth_pos_eci_au);
+
+    // Also fetch solar data for lighting
+    clearSolarData();
+    const solarData = await fetchSolarData(state.epoch, offsets);
+    if (solarData) scheduleVisualUpdate();
+  } catch (err) {
+    console.error('[helio] Failed to fetch scene timeline:', err);
+  }
+}
+
+/** Called when switching to/from heliocentric mode. */
+function applySceneModeChange(mode) {
+  const isHelio = mode === 'helio';
+
+  // Toggle UI visibility
+  if (elements.helioControls) {
+    elements.helioControls.style.display = isHelio ? 'flex' : 'none';
+  }
+
+  // Toggle scene graph mode
+  setSceneHelioMode(isHelio);
+  setSolarHelioMode(isHelio);
+
+  if (isHelio) {
+    updateHelioSampleHint();
+    recomputeHelioTimeline();
+  } else {
+    // Reset earth system position to origin
+    setEarthHelioPosition([0, 0, 0]);
+    _sceneTimelineData = null;
+    // Recompute normal orbit
+    recomputeOrbit(true);
+  }
+}
+
 async function recomputeOrbit(force = false) {
+  // In helio mode, skip orbit propagation and use scene timeline instead
+  if (state.sceneMode === 'helio') {
+    await recomputeHelioTimeline();
+    return;
+  }
   const signature = orbitSignature(state);
   if (!force && signature === lastOrbitSignature) return;
   lastOrbitSignature = signature;
@@ -2545,6 +2642,14 @@ async function recomputeOrbit(force = false) {
   lastConstellationIndex = -1;
   if (hasActiveConstellations()) {
     forceConstellationRefresh();
+  }
+
+  // ── Fetch solar ephemeris for the new orbit timeline ──────────────────
+  if (Array.isArray(orbitData.timeline) && orbitData.timeline.length) {
+    clearSolarData();
+    fetchSolarData(state.epoch, orbitData.timeline).then((sd) => {
+      if (sd) scheduleVisualUpdate();   // re-paint with solar data
+    });
   }
 }
 
@@ -2621,10 +2726,40 @@ function scheduleVisualUpdate() {
   const { dataPoints, groundTrack, customConstellation } = state.computed;
   const index = clamp(state.time.index, 0, state.time.timeline.length - 1);
 
+  // ── Heliocentric mode: update Earth position + solar lighting ────────
+  if (state.sceneMode === 'helio' && _sceneTimelineData) {
+    const stl = _sceneTimelineData;
+    const hi = Math.min(index, (stl.earth_pos_eci_au?.length ?? 1) - 1);
+    if (stl.earth_pos_eci_au?.[hi]) {
+      setEarthHelioPosition(stl.earth_pos_eci_au[hi]);
+    }
+    if (stl.gmst_rad?.[hi] != null) {
+      setEarthRotationFromTime(stl.gmst_rad[hi]);
+    }
+    const solarData = getSolarData();
+    if (solarData) {
+      updateSolarFromBackend(hi, solarData);
+      // Update directional light for helio mode (sun at origin)
+      if (solarData.sun_dir_eci?.[hi]) {
+        const [ex, ey, ez] = solarData.sun_dir_eci[hi];
+        updateSolarLighting(ex, ez, -ey);  // ECI→Three.js axis mapping
+      }
+    }
+    updateMetricsUI(index);
+    return;  // helio mode doesn't render orbit/satellite/link per-step
+  }
+
   // Single orbit
   if (dataPoints && dataPoints.length > 0) {
     const current = dataPoints[index];
     setEarthRotationFromTime(current.gmst ?? 0);
+
+    // ── Solar lighting update (from backend data) ────────────────────────
+    const solarData = getSolarData();
+    if (solarData) {
+      updateSolarFromBackend(index, solarData);
+    }
+
     updateGroundTrack(groundTrack);
     updateGroundTrackSurface(groundTrack);
     updateSatellitePosition({ lat: current.lat, lon: current.lon }, computeFootprint(current.alt));
@@ -2804,7 +2939,20 @@ function updateMetricsUI(index) {
 
   if (elements.timeLabel) {
     const t = state.time.timeline[index] ?? 0;
-    elements.timeLabel.textContent = `${t.toFixed(1)} s`;
+    if (state.sceneMode === 'helio' && t >= 86400) {
+      const days = t / 86400;
+      elements.timeLabel.textContent = `${days.toFixed(1)} d`;
+    } else if (t >= 3600) {
+      const hours = t / 3600;
+      elements.timeLabel.textContent = `${hours.toFixed(1)} h`;
+    } else {
+      elements.timeLabel.textContent = `${t.toFixed(1)} s`;
+    }
+  }
+  // Show total simulation duration
+  if (elements.totalDurationLabel) {
+    const totalSec = state.time.totalSeconds ?? (state.time.timeline?.length ? state.time.timeline[state.time.timeline.length - 1] : 0);
+    elements.totalDurationLabel.textContent = formatDuration(totalSec);
   }
   if (elements.elevationLabel) elements.elevationLabel.textContent = formatAngle(elevation);
   if (elements.lossLabel) elements.lossLabel.textContent = formatLoss(loss);
@@ -3290,6 +3438,14 @@ function onStateChange(snapshot) {
   }
 
   const orbitSig = orbitSignature(snapshot);
+
+  // Detect scene mode change (orbit ↔ helio)
+  if (snapshot.sceneMode !== onStateChange._lastSceneMode) {
+    onStateChange._lastSceneMode = snapshot.sceneMode;
+    applySceneModeChange(snapshot.sceneMode);
+    return;
+  }
+
   if (orbitSig !== lastOrbitSignature) {
     void recomputeOrbit(true);
     return;
@@ -3354,6 +3510,7 @@ async function initialize() {
   refreshStationSelect();
   await recomputeOrbit(true);
   subscribe(onStateChange, false);
+  onStateChange._lastSceneMode = state.sceneMode;  // initialise mode tracker
   // persist optimization points on each state change (debounced-ish via animation frame)
   let persistRaf = null;
   subscribe(() => {

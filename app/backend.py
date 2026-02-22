@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
         ogs,
         orbital,
         pages,
+        solar,
         solver,
         tles as tles_router,
         users,
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     application.include_router(tles_router.router)
     application.include_router(constellation.router)
     application.include_router(solver.router)
+    application.include_router(solar.router)
 
     # Startup hook -----------------------------------------------------------
     @application.on_event("startup")
