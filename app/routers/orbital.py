@@ -12,14 +12,16 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 
 from ..physics.constants import DEG2RAD, EARTH_RADIUS_KM, J2, J3, J4, MU_EARTH, RAD2DEG
 from ..physics.propagation import compute_j2_secular_rates
 from ..physics.walker import (
+    compute_sso_orbit,
     generate_walker,
+    ltan_to_raan,
     repeat_ground_track_sma,
     sun_synchronous_inclination,
     validate_elements,
@@ -34,6 +36,7 @@ async def orbital_info() -> Dict[str, Any]:
         "j2_available": True,
         "j3_j4_available": True,
         "sun_synchronous_calculation": True,
+        "sun_synchronous_orbit_design": True,
         "walker_constellation": True,
         "repeat_ground_track": True,
         "constants": {
@@ -62,6 +65,25 @@ async def calc_sun_sync(altitude_km: float, eccentricity: float = 0.0):
         "raan_drift_deg_per_day": rates.dot_raan * 86400 * RAD2DEG,
         "is_sun_synchronous": True,
     }
+
+
+@router.get("/sun-synchronous-orbit")
+async def design_sso(
+    altitude_km: float,
+    eccentricity: float = 0.0,
+    ltan_hours: float = 10.5,
+    epoch: Optional[str] = None,
+):
+    """Design a complete Sun-Synchronous Orbit.
+
+    Returns full orbital elements including RAAN derived from LTAN, plus
+    SSO metadata such as orbit class and RAAN drift rate.
+    """
+    try:
+        result = compute_sso_orbit(altitude_km, eccentricity, ltan_hours, epoch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
 
 
 @router.get("/walker-constellation")

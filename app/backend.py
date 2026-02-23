@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     from .routers import (  # noqa: E402
         atmosphere as atmo_router,
         constellation,
+        irradiance as irradiance_router,
         ogs,
         orbital,
         pages,
@@ -63,6 +64,9 @@ def create_app() -> FastAPI:
     users.set_database(database)
     tles_router.set_tle_service(tles)
     atmo_router.set_services(atmosphere, weather)
+    # Irradiance service (no external dependencies to inject)
+    from .services.irradiance_svc import IrradianceService  # noqa: E402
+    irradiance_router.set_service(IrradianceService())
 
     # Include routers --------------------------------------------------------
     application.include_router(pages.router)
@@ -74,6 +78,7 @@ def create_app() -> FastAPI:
     application.include_router(constellation.router)
     application.include_router(solver.router)
     application.include_router(solar.router)
+    application.include_router(irradiance_router.router)
 
     # Startup hook -----------------------------------------------------------
     @application.on_event("startup")

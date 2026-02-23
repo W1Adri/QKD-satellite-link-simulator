@@ -128,6 +128,100 @@ def repeat_ground_track_sma(
     return a, a - EARTH_RADIUS_KM
 
 
+def ltan_to_raan(
+    ltan_hours: float,
+    epoch_iso: Optional[str] = None,
+) -> float:
+    """Convert Local Time of Ascending Node to RAAN (°).
+
+    For a sun-synchronous orbit the RAAN is tied to local solar time.
+    RAAN ≈ (LTAN_hours − 12) × 15  + sun_right_ascension.
+    Without a precise epoch we approximate the Sun RA from the day-of-year.
+
+    Args:
+        ltan_hours: Local time of ascending node in decimal hours (0–24).
+        epoch_iso:  ISO-8601 epoch string (optional; defaults to now).
+
+    Returns:
+        RAAN in degrees [0, 360).
+    """
+    from datetime import datetime as _dt
+
+    if epoch_iso:
+        try:
+            epoch = _dt.fromisoformat(epoch_iso.replace("Z", "+00:00"))
+        except Exception:
+            epoch = _dt.utcnow()
+    else:
+        epoch = _dt.utcnow()
+
+    # Approximate Sun right ascension (degrees) from day-of-year
+    day_of_year = epoch.timetuple().tm_yday
+    # Sun RA ≈ 0° at vernal equinox (~ day 80), advances ~0.9856°/day
+    sun_ra = ((day_of_year - 80) * SOLAR_MEAN_MOTION) % 360.0
+
+    raan = sun_ra + (ltan_hours - 12.0) * 15.0
+    return raan % 360.0
+
+
+def compute_sso_orbit(
+    altitude_km: float,
+    eccentricity: float = 0.0,
+    ltan_hours: float = 10.5,
+    epoch_iso: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Compute complete Sun-Synchronous Orbit parameters.
+
+    Returns a dict with all orbital elements and SSO metadata:
+        altitude_km, eccentricity, inclination_deg, semi_major_axis_km,
+        raan_deg, period_seconds, revolutions_per_day, raan_drift_deg_per_day,
+        ltan_hours, ltan_formatted, is_sun_synchronous, nodal_precession_note.
+    """
+    inc_deg = sun_synchronous_inclination(altitude_km, eccentricity)
+    a = EARTH_RADIUS_KM + altitude_km
+    raan_deg = ltan_to_raan(ltan_hours, epoch_iso)
+
+    rates = compute_j2_secular_rates(a, eccentricity, inc_deg * DEG2RAD)
+    period = 2 * math.pi * math.sqrt(a ** 3 / MU_EARTH)
+    revs_per_day = 86400.0 / period
+
+    # Format LTAN as HH:MM
+    ltan_h = int(ltan_hours)
+    ltan_m = int((ltan_hours - ltan_h) * 60)
+    ltan_formatted = f"{ltan_h:02d}:{ltan_m:02d}"
+
+    # Classify SSO orbit type by LTAN
+    if 5.5 <= ltan_hours <= 6.5 or 17.5 <= ltan_hours <= 18.5:
+        orbit_class = "dawn-dusk"
+    elif 9.5 <= ltan_hours <= 10.5:
+        orbit_class = "mid-morning (typical Earth observation)"
+    elif 13.0 <= ltan_hours <= 14.5:
+        orbit_class = "early afternoon (typical Earth observation)"
+    else:
+        orbit_class = "general purpose"
+
+    return {
+        "altitude_km": altitude_km,
+        "eccentricity": eccentricity,
+        "inclination_deg": round(inc_deg, 4),
+        "semi_major_axis_km": round(a, 3),
+        "raan_deg": round(raan_deg, 4),
+        "arg_perigee_deg": 0.0,
+        "mean_anomaly_deg": 0.0,
+        "period_seconds": round(period, 3),
+        "revolutions_per_day": round(revs_per_day, 4),
+        "raan_drift_deg_per_day": round(rates.dot_raan * 86400 * RAD2DEG, 6),
+        "ltan_hours": ltan_hours,
+        "ltan_formatted": ltan_formatted,
+        "orbit_class": orbit_class,
+        "is_sun_synchronous": True,
+        "nodal_precession_note": (
+            f"RAAN precesses at {SOLAR_MEAN_MOTION:.4f} °/day to maintain "
+            f"sun-synchronous geometry."
+        ),
+    }
+
+
 def validate_elements(
     a: float,
     e: float,

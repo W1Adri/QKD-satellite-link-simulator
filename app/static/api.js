@@ -88,6 +88,12 @@ export async function getSunSynchronous(altitude, ecc = 0) {
   return _get(`/api/orbital/sun-synchronous?altitude_km=${altitude}&eccentricity=${ecc}`);
 }
 
+export async function designSSOOrbit(altitude, ecc = 0, ltanHours = 10.5, epoch = null) {
+  let url = `/api/orbital/sun-synchronous-orbit?altitude_km=${altitude}&eccentricity=${ecc}&ltan_hours=${ltanHours}`;
+  if (epoch) url += `&epoch=${encodeURIComponent(epoch)}`;
+  return _get(url);
+}
+
 export async function getWalkerConstellation(T, P, F, alt, inc, ecc = 0) {
   return _get(
     `/api/orbital/walker-constellation?T=${T}&P=${P}&F=${F}&altitude_km=${alt}&inclination_deg=${inc}&eccentricity=${ecc}`,
@@ -118,6 +124,11 @@ export async function postChat(userId, message) {
   return _post('/api/chats', { user_id: userId, message });
 }
 
+// ── Irradiance ──────────────────────────────────────────────────────────
+export async function getIrradiance(params) {
+  return _post('/api/irradiance', params);
+}
+
 // ── Solar ephemeris ─────────────────────────────────────────────────────
 export async function fetchSolar(epochIso, tOffsetsS) {
   return _post('/api/solar', { epoch_iso: epochIso, t_offsets_s: tOffsetsS });
@@ -138,10 +149,11 @@ export async function health() { return _get('/health'); }
 // Bundle as single namespace for convenience
 export const api = {
   solve, getAtmosphereProfile, getWeatherField,
+  getIrradiance,
   listOGS, addOGS, deleteOGS, clearOGS,
   listTLEGroups, fetchTLEGroup,
   analyzeConstellation, propagateConstellation, getConstellationCoverage,
-  getSunSynchronous, getWalkerConstellation, getRepeatGroundTrack,
+  getSunSynchronous, designSSOOrbit, getWalkerConstellation, getRepeatGroundTrack,
   fetchSolar,
   fetchSceneTimeline,
   login, logout, getUserCount,

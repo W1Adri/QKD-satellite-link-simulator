@@ -235,6 +235,68 @@
                 <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
               </div>
             </div>
+
+            <!-- ── Sun-Synchronous Orbit (SSO) Panel ── -->
+            <div id="ssoPanel" class="field-group sso-panel">
+              <header>
+                <h3>☀️ Sun-Synchronous Orbit</h3>
+                <p class="hint">Auto-compute inclination &amp; RAAN for a sun-synchronous orbit</p>
+              </header>
+              <div class="field">
+                <input id="ssoToggle" type="checkbox" />
+                <label for="ssoToggle">Enable SSO mode</label>
+                <button type="button" class="info-button" aria-label="What is SSO?" data-info="A Sun-Synchronous Orbit (SSO) precesses at exactly the same rate as the Earth orbits the Sun (~0.9856°/day), so the satellite always crosses the equator at the same local solar time. The inclination and RAAN are automatically derived from altitude and LTAN.">!</button>
+              </div>
+              <div id="ssoFields" style="display: none;">
+                <div class="field">
+                  <div class="field-label">
+                    <label for="ssoAltitude">Altitude (km)</label>
+                    <button type="button" class="info-button" aria-label="SSO altitude" data-info="Orbital altitude for the sun-synchronous orbit. Valid range is roughly 200–6000 km. The required inclination is computed from this value.">!</button>
+                  </div>
+                  <input id="ssoAltitude" type="number" step="1" min="200" max="6000" value="600" />
+                  <input id="ssoAltitudeSlider" type="range" min="200" max="6000" step="1" value="600" />
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <label for="ssoEccentricity">Eccentricity</label>
+                    <button type="button" class="info-button" aria-label="SSO eccentricity" data-info="Eccentricity for the SSO. Most sun-synchronous orbits are near-circular (e ≈ 0). Frozen orbits may use small eccentricities (e.g. 0.001).">!</button>
+                  </div>
+                  <input id="ssoEccentricity" type="number" step="0.001" min="0" max="0.1" value="0.001" />
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <label for="ssoLTAN">Local Time of Ascending Node</label>
+                    <button type="button" class="info-button" aria-label="What is LTAN?" data-info="The local solar time at which the satellite crosses the equator northbound. Common choices: 06:00/18:00 (dawn-dusk, good for solar panel illumination), 10:30 (typical Earth observation, e.g. Sentinel-2/Landsat), 13:30 (afternoon pass).">!</button>
+                  </div>
+                  <select id="ssoLTAN">
+                    <option value="6.0">06:00 (Dawn-dusk)</option>
+                    <option value="9.5">09:30 (Mid-morning)</option>
+                    <option value="10.5" selected>10:30 (Earth Obs, e.g. Sentinel-2)</option>
+                    <option value="12.0">12:00 (Noon)</option>
+                    <option value="13.5">13:30 (Afternoon, e.g. Landsat)</option>
+                    <option value="18.0">18:00 (Dawn-dusk)</option>
+                    <option value="22.5">22:30 (Night-time)</option>
+                  </select>
+                </div>
+                <div class="button-row" style="margin-top: 0.75rem;">
+                  <button id="btnComputeSSO" type="button" class="btn-primary">Compute SSO</button>
+                </div>
+                <div id="ssoResults" class="sso-results" style="display: none; margin-top: 0.75rem;">
+                  <table class="sso-results-table">
+                    <tr><td>Inclination</td><td id="ssoResInc">—</td></tr>
+                    <tr><td>Semi-major axis</td><td id="ssoResSMA">—</td></tr>
+                    <tr><td>RAAN (Ω)</td><td id="ssoResRAAN">—</td></tr>
+                    <tr><td>Period</td><td id="ssoResPeriod">—</td></tr>
+                    <tr><td>Revs / day</td><td id="ssoResRevs">—</td></tr>
+                    <tr><td>RAAN drift</td><td id="ssoResDrift">—</td></tr>
+                    <tr><td>Orbit class</td><td id="ssoResClass">—</td></tr>
+                  </table>
+                  <button id="btnApplySSO" type="button" class="btn-secondary" style="margin-top: 0.5rem; width: 100%;">Apply to orbit elements</button>
+                </div>
+                <div id="ssoError" class="error-message" style="display: none; margin-top: 0.5rem; color: var(--color-error, #ef4444);"></div>
+              </div>
+            </div>
+
             <div id="orbitMessages" class="panel-messages" hidden></div>
           </section>
 
@@ -543,6 +605,27 @@
                 <button type="button" class="btn-show-graph" data-graph-id="wind">Show graph</button>
               </li>
             </ul>
+
+            <h4 class="metrics-title">🛰️ Pass Time over OGS</h4>
+            <p>Total time the satellite has direct line-of-sight to the selected OGS within the chosen maximum zenith angle.</p>
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="passZenithThreshold">Max zenith angle (°)</label>
+                  <button type="button" class="info-button" aria-label="Max zenith info" data-info="Maximum zenith angle (measured from station vertical) below which the satellite is considered in communication range. E.g. 70° means only passes with zenith &lt; 70° (elevation &gt; 20°) count.">!</button>
+                </div>
+                <input id="passZenithThreshold" type="number" min="0" max="90" step="1" value="70" />
+                <input id="passZenithThresholdSlider" type="range" min="0" max="90" step="1" value="70" />
+              </div>
+              <div class="field" style="align-self:flex-end">
+                <button id="btnComputePassTime" type="button" class="btn-action">Compute</button>
+              </div>
+            </div>
+            <div id="passTimeResults" style="margin-top:.5rem;display:none">
+              <p><span class="metric-label">Total pass time</span> <strong id="passTimeTotalMetric">--</strong></p>
+              <p><span class="metric-label">Number of passes</span> <strong id="passTimeCountMetric">--</strong></p>
+              <p><span class="metric-label">Longest single pass</span> <strong id="passTimeLongestMetric">--</strong></p>
+            </div>
           </section>
 
           <section class="panel-section" data-section="weather">
@@ -590,6 +673,93 @@
               <button id="weatherClearBtn" type="button" class="ghost">Clear overlay</button>
             </div>
             <p id="weatherStatus" class="hint"></p>
+
+            <!-- ── OGS Ground-Level Irradiance ─────────────────────────── -->
+            <hr class="section-divider" />
+            <div class="section-header">
+              <h2>☀️ OGS Ground Irradiance</h2>
+              <p class="section-desc">Solar irradiance at the selected ground station — via Open-Meteo or clear-sky model.</p>
+            </div>
+
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="irradianceMethod">Method</label>
+                  <button type="button" class="info-button" aria-label="Irradiance method info" data-info="'Analytical' uses a clear-sky model (Spencer 1971 + Kasten–Young 1989 air-mass). 'Open-Meteo' fetches measured / forecast GHI, DNI, DHI from the Open-Meteo Solar Radiation API.">!</button>
+                </div>
+                <select id="irradianceMethod">
+                  <option value="analytical" selected>Analytical (clear-sky model)</option>
+                  <option value="open-meteo">Open-Meteo (measured / forecast)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="irradianceTime">Timestamp (UTC)</label>
+                  <button type="button" class="info-button" aria-label="Irradiance time info" data-info="UTC date/time for which irradiance is computed or fetched. Defaults to the epoch set in the Orbit panel.">!</button>
+                </div>
+                <input id="irradianceTime" type="datetime-local" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="irradianceAltitude">Altitude (m)</label>
+                  <button type="button" class="info-button" aria-label="Station altitude info" data-info="Station altitude above sea level in metres. Used by the analytical model for air-mass correction.">!</button>
+                </div>
+                <input id="irradianceAltitude" type="number" min="0" max="9000" step="10" value="0" />
+              </div>
+            </div>
+
+            <div class="field-group inline">
+              <button id="btnFetchIrradiance" type="button">Compute irradiance</button>
+            </div>
+            <p id="irradianceStatus" class="hint" hidden></p>
+
+            <div id="irradianceMetrics" class="metrics-grid" style="display: none;">
+              <div class="metric-card">
+                <span class="metric-label">GHI</span>
+                <span id="irradianceGHI" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">DNI</span>
+                <span id="irradianceDNI" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">DHI</span>
+                <span id="irradianceDHI" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Solar elevation</span>
+                <span id="irradianceElevation" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Day / Night</span>
+                <span id="irradianceDayNight" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Air mass</span>
+                <span id="irradianceAirMass" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Day length</span>
+                <span id="irradianceDayLength" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Sunrise (UTC)</span>
+                <span id="irradianceSunrise" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Sunset (UTC)</span>
+                <span id="irradianceSunset" class="metric-value">--</span>
+              </div>
+              <div class="metric-card" style="grid-column: 1 / -1;">
+                <span class="metric-label">Source</span>
+                <span id="irradianceSource" class="metric-value">--</span>
+              </div>
+            </div>
+
+            <canvas id="irradianceChart" width="320" height="180" style="display: none; margin-top: 0.75rem; width: 100%; max-height: 200px;"></canvas>
           </section>
 
           <section class="panel-section" data-section="atmosphere">

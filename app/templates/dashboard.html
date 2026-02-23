@@ -162,6 +162,43 @@
                                 <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
                                 <div><dt>Doppler</dt><dd id="dopplerMetric">--</dd></div>
                             </dl>
+
+                            <!-- Solar Irradiance at OGS -->
+                            <details class="irradiance-panel" id="irradiancePanel">
+                                <summary><strong>☀ Solar Irradiance</strong></summary>
+                                <div class="field">
+                                    <label for="irradianceMethod">Method</label>
+                                    <select id="irradianceMethod">
+                                        <option value="analytical" selected>Clear-sky model</option>
+                                        <option value="open-meteo">Open-Meteo (real data)</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label for="irradianceTime">Time (UTC)</label>
+                                    <input id="irradianceTime" type="datetime-local" />
+                                </div>
+                                <div class="field">
+                                    <label for="irradianceAltitude">Station altitude (m)</label>
+                                    <input id="irradianceAltitude" type="number" min="0" max="9000" step="1" value="0" />
+                                </div>
+                                <div class="button-row">
+                                    <button id="btnFetchIrradiance" type="button">Compute</button>
+                                </div>
+                                <div id="irradianceStatus" class="hint"></div>
+                                <dl class="metrics" id="irradianceMetrics" style="display:none;">
+                                    <div><dt>GHI</dt><dd id="irradianceGHI">--</dd></div>
+                                    <div><dt>DNI</dt><dd id="irradianceDNI">--</dd></div>
+                                    <div><dt>DHI</dt><dd id="irradianceDHI">--</dd></div>
+                                    <div><dt>Solar Elevation</dt><dd id="irradianceElevation">--</dd></div>
+                                    <div><dt>Day/Night</dt><dd id="irradianceDayNight">--</dd></div>
+                                    <div><dt>Air Mass</dt><dd id="irradianceAirMass">--</dd></div>
+                                    <div><dt>Day Length</dt><dd id="irradianceDayLength">--</dd></div>
+                                    <div><dt>Sunrise (UTC)</dt><dd id="irradianceSunrise">--</dd></div>
+                                    <div><dt>Sunset (UTC)</dt><dd id="irradianceSunset">--</dd></div>
+                                    <div><dt>Source</dt><dd id="irradianceSource">--</dd></div>
+                                </dl>
+                                <canvas id="irradianceChart" width="300" height="150" style="display:none; margin-top:0.5rem;"></canvas>
+                            </details>
                         </section>
                         <section class="panel-group" data-section="constellations" hidden>
                             <header>

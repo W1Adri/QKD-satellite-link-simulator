@@ -1508,3 +1508,101 @@ dialog::backdrop {
   z-index: 99 !important; /* Ensure the track is also interactive */
 }
 
+/* ── Section divider ────────────────────────────────────────────────── */
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--cyber-border, rgba(79, 209, 255, 0.15));
+  margin: var(--space-lg, 1.25rem) 0;
+}
+
+/* ── Metrics grid (irradiance, etc.) ───────────────────────────────── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm, 0.5rem);
+  margin-top: var(--space-md, 0.75rem);
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm, 0.5rem);
+  background: var(--cyber-bg-secondary, #0a1929);
+  border: 1px solid var(--cyber-border, rgba(79, 209, 255, 0.12));
+  border-radius: var(--radius-sm, 4px);
+}
+
+.metric-card .metric-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #8899aa);
+}
+
+.metric-card .metric-value {
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: var(--neon-cyan, #4fd1ff);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* ── Irradiance panel ──────────────────────────────────────────────────── */
+#irradianceChart {
+  width: 100%;
+  max-height: 180px;
+  border-radius: var(--radius, 0.5rem);
+}
+
+/* ── Sun-Synchronous Orbit (SSO) panel ─────────────────────────────────── */
+.sso-panel {
+  border-top: 1px solid var(--cyber-border, rgba(79, 209, 255, 0.12));
+  padding-top: var(--space-md, 1rem);
+  margin-top: var(--space-md, 1rem);
+}
+
+.sso-panel header h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.25rem;
+}
+
+.sso-panel header .hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #8899aa);
+  margin: 0 0 0.5rem;
+}
+
+.sso-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.sso-results-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--cyber-border, rgba(79, 209, 255, 0.08));
+}
+
+.sso-results-table td:first-child {
+  color: var(--text-secondary, #8899aa);
+  font-weight: 500;
+  white-space: nowrap;
+  width: 40%;
+}
+
+.sso-results-table td:last-child {
+  font-family: 'Courier New', monospace;
+  color: var(--neon-cyan, #4fd1ff);
+  font-weight: 600;
+  text-align: right;
+}
+
+.sso-panel .error-message {
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+

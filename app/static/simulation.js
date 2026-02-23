@@ -322,7 +322,7 @@ function latLonToEci(lat, lon, alt, gmst) {
 export const orbit = {
   constants: orbitConstants,
   propagateOrbit, computeStationMetrics,
-  stationEcef, latLonToEci,
+  stationEcef, latLonToEci, gmstFromDate,
 };
 
 

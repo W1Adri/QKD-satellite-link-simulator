@@ -79,6 +79,15 @@ class AtmosRequest(BaseModel):
     wavelength_nm: Optional[float] = Field(default=810.0, ge=400.0, le=2000.0)
 
 
+class IrradianceRequest(BaseModel):
+    """Request payload for POST /api/irradiance."""
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+    time: str
+    method: str = Field(default="analytical")   # "analytical" | "open-meteo"
+    altitude_m: float = Field(default=0.0, ge=0.0, le=9000.0)
+
+
 class WeatherFieldRequest(BaseModel):
     time: str
     variable: str = Field(default="wind_speed")

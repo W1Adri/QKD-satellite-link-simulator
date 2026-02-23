@@ -52,12 +52,47 @@ import {
 import { orbit, resonanceSolver, walkerGenerator, qkdCalculations } from './simulation.js';
 import { map2d, scene3d, initSliders, createPanelAccordions } from './ui.js';
 import { fetchSolarData, updateSolarFromBackend, getSolarData, clearSolarData, setSolarHelioMode } from './solar.js';
-import { fetchSceneTimeline } from './api.js';
+import { fetchSceneTimeline, designSSOOrbit } from './api.js';
 
-const { constants: orbitConstants } = orbit;
+const { constants: orbitConstants, gmstFromDate } = orbit;
 const { searchResonances, periodFromA, aFromPeriod } = resonanceSolver;
 const { generateWalkerConstellation } = walkerGenerator;
 const { calculateQKDPerformance } = qkdCalculations;
+
+// ── Approximate Sun direction from a Date (low-precision solar ephemeris) ──
+// Good to ~1°; used as initial lighting when backend solar data is not yet
+// available.  Returns ECI unit vector [x, y, z].
+function approxSunDirEci(date) {
+  const jd = date.getTime() / 86400000 + 2440587.5;
+  const n = jd - 2451545.0;                          // days since J2000.0
+  const DEG = Math.PI / 180;
+  const L = ((280.460 + 0.9856474 * n) % 360) * DEG;  // mean longitude
+  const g = ((357.528 + 0.9856003 * n) % 360) * DEG;  // mean anomaly
+  const lambda = L + 1.915 * DEG * Math.sin(g) + 0.020 * DEG * Math.sin(2 * g);
+  const eps = 23.439 * DEG;                            // obliquity
+  return [
+    Math.cos(lambda),
+    Math.cos(eps) * Math.sin(lambda),
+    Math.sin(eps) * Math.sin(lambda),
+  ];
+}
+
+/**
+ * Sync the 3D scene’s Earth rotation and Sun lighting to the current epoch,
+ * using client-side GMST + approximate solar position.  Called when no
+ * backend solar data is available yet (scene init, epoch change, etc.).
+ */
+function syncSceneToEpoch() {
+  const epochDate = new Date(state.epoch);
+  if (Number.isNaN(epochDate.getTime())) return;
+  // Earth rotation
+  const gmst = gmstFromDate(epochDate);
+  setEarthRotationFromTime(gmst);
+  // Approximate sun direction
+  const [ex, ey, ez] = approxSunDirEci(epochDate);
+  // ECI → Three.js axis mapping:  tx=x, ty=z, tz=-y
+  updateSolarLighting(ex, ez, -ey);
+}
 
 const {
   initMap,
@@ -346,8 +381,21 @@ function cacheElements() {
     'darkCountRate', 'darkCountRateSlider', 'opticalFilterBandwidth', 'opticalFilterBandwidthSlider',
     'btnCalculateQKD', 'qkdStatus', 'qberMetric', 'rawKeyRateMetric', 'secureKeyRateMetric', 'channelTransmittanceMetric',
     'j2Toggle',
+    // SSO panel elements
+    'ssoToggle', 'ssoFields', 'ssoAltitude', 'ssoAltitudeSlider', 'ssoEccentricity',
+    'ssoLTAN', 'btnComputeSSO', 'ssoResults', 'ssoError', 'btnApplySSO',
+    'ssoResInc', 'ssoResSMA', 'ssoResRAAN', 'ssoResPeriod', 'ssoResRevs',
+    'ssoResDrift', 'ssoResClass',
     // Heliocentric mode controls
     'sceneModeSelect', 'helioControls', 'helioInterval', 'helioStep', 'helioSampleCount',
+    // Irradiance panel
+    'irradianceMethod', 'irradianceTime', 'irradianceAltitude', 'btnFetchIrradiance',
+    'irradianceStatus', 'irradianceMetrics', 'irradianceGHI', 'irradianceDNI', 'irradianceDHI',
+    'irradianceElevation', 'irradianceDayNight', 'irradianceAirMass', 'irradianceDayLength',
+    'irradianceSunrise', 'irradianceSunset', 'irradianceSource', 'irradianceChart',
+    // Pass time over OGS
+    'passZenithThreshold', 'passZenithThresholdSlider', 'btnComputePassTime',
+    'passTimeResults', 'passTimeTotalMetric', 'passTimeCountMetric', 'passTimeLongestMetric',
   ];
   ids.forEach((id) => {
     elements[id] = document.getElementById(id);
@@ -1287,6 +1335,89 @@ function bindEvents() {
     await recomputeOrbit(true);
   });
 
+  // ── SSO panel event handlers ────────────────────────────────────────────
+  let _lastSSOResult = null;
+
+  elements.ssoToggle?.addEventListener('change', (event) => {
+    const show = event.target.checked;
+    if (elements.ssoFields) elements.ssoFields.style.display = show ? '' : 'none';
+    if (!show) {
+      if (elements.ssoResults) elements.ssoResults.style.display = 'none';
+      if (elements.ssoError) elements.ssoError.style.display = 'none';
+      _lastSSOResult = null;
+    }
+  });
+
+  // Sync SSO altitude slider ↔ input
+  const ssoAltEl = elements.ssoAltitude;
+  const ssoAltSlider = elements.ssoAltitudeSlider;
+  if (ssoAltEl && ssoAltSlider) {
+    ssoAltEl.addEventListener('change', () => { ssoAltSlider.value = ssoAltEl.value; });
+    ssoAltSlider.addEventListener('input', () => { ssoAltEl.value = ssoAltSlider.value; });
+  }
+
+  elements.btnComputeSSO?.addEventListener('click', async () => {
+    const alt = Number(elements.ssoAltitude?.value ?? 600);
+    const ecc = Number(elements.ssoEccentricity?.value ?? 0.001);
+    const ltan = Number(elements.ssoLTAN?.value ?? 10.5);
+    const epoch = elements.epochInput?.value || null;
+
+    if (elements.ssoError) elements.ssoError.style.display = 'none';
+    if (elements.ssoResults) elements.ssoResults.style.display = 'none';
+
+    try {
+      const res = await designSSOOrbit(alt, ecc, ltan, epoch);
+      _lastSSOResult = res;
+
+      // Populate results table
+      if (elements.ssoResInc)    elements.ssoResInc.textContent    = `${res.inclination_deg.toFixed(4)}°`;
+      if (elements.ssoResSMA)    elements.ssoResSMA.textContent    = `${res.semi_major_axis_km.toFixed(3)} km`;
+      if (elements.ssoResRAAN)   elements.ssoResRAAN.textContent   = `${res.raan_deg.toFixed(4)}°`;
+      if (elements.ssoResPeriod) elements.ssoResPeriod.textContent = `${(res.period_seconds / 60).toFixed(2)} min`;
+      if (elements.ssoResRevs)   elements.ssoResRevs.textContent   = `${res.revolutions_per_day.toFixed(2)}`;
+      if (elements.ssoResDrift)  elements.ssoResDrift.textContent  = `${res.raan_drift_deg_per_day.toFixed(4)} °/day`;
+      if (elements.ssoResClass)  elements.ssoResClass.textContent  = res.orbit_class;
+
+      if (elements.ssoResults) elements.ssoResults.style.display = '';
+    } catch (err) {
+      if (elements.ssoError) {
+        elements.ssoError.textContent = err.message || 'SSO computation failed';
+        elements.ssoError.style.display = '';
+      }
+    }
+  });
+
+  elements.btnApplySSO?.addEventListener('click', async () => {
+    if (!_lastSSOResult) return;
+    const r = _lastSSOResult;
+
+    // Apply computed SSO elements to the main orbit controls
+    mutate((draft) => {
+      draft.orbital.semiMajor = r.semi_major_axis_km;
+      draft.orbital.eccentricity = r.eccentricity;
+      draft.orbital.inclination = r.inclination_deg;
+      draft.orbital.raan = r.raan_deg;
+      draft.orbital.argPerigee = r.arg_perigee_deg;
+      draft.orbital.meanAnomaly = r.mean_anomaly_deg;
+    });
+
+    // Sync UI inputs with the new values
+    if (elements.semiMajor)        { elements.semiMajor.value = String(r.semi_major_axis_km); }
+    if (elements.semiMajorSlider)  { elements.semiMajorSlider.value = String(r.semi_major_axis_km); }
+    if (elements.eccentricity)     { elements.eccentricity.value = String(r.eccentricity); }
+    if (elements.eccentricitySlider) { elements.eccentricitySlider.value = String(r.eccentricity); }
+    if (elements.inclination)      { elements.inclination.value = String(r.inclination_deg); }
+    if (elements.inclinationSlider) { elements.inclinationSlider.value = String(r.inclination_deg); }
+    if (elements.raan)             { elements.raan.value = String(r.raan_deg); }
+    if (elements.raanSlider)       { elements.raanSlider.value = String(r.raan_deg); }
+    if (elements.argPerigee)       { elements.argPerigee.value = String(r.arg_perigee_deg); }
+    if (elements.argPerigeeSlider) { elements.argPerigeeSlider.value = String(r.arg_perigee_deg); }
+    if (elements.meanAnomaly)      { elements.meanAnomaly.value = String(r.mean_anomaly_deg); }
+
+    orbitSamplesOverride = null;
+    await recomputeOrbit(true);
+  });
+
   const bindOpticalTurbulenceInput = (inputId, key) => {
     const inputEl = elements[inputId];
     if (!inputEl) return;
@@ -1821,6 +1952,10 @@ function bindEvents() {
     mutate((draft) => {
       draft.epoch = event.target.value;
     });
+    // Immediately update 3D scene lighting/rotation for the new epoch
+    syncSceneToEpoch();
+    // Sync irradiance time picker to the new epoch
+    if (elements.irradianceTime) elements.irradianceTime.value = event.target.value.slice(0, 16);
   });
 
   elements.optimizerForm?.addEventListener('submit', (event) => {
@@ -1876,6 +2011,24 @@ function bindEvents() {
 
   elements.weatherFetchBtn?.addEventListener('click', () => {
     void fetchWeatherFieldData();
+  });
+
+  elements.btnFetchIrradiance?.addEventListener('click', () => {
+    void fetchIrradiance();
+  });
+
+  // ── Pass time over OGS ────────────────────────────────────────────────
+  // Sync zenith threshold slider ↔ input
+  const syncPassZenith = (val) => {
+    const v = Math.max(0, Math.min(90, Number(val) || 70));
+    if (elements.passZenithThreshold) elements.passZenithThreshold.value = v;
+    if (elements.passZenithThresholdSlider) elements.passZenithThresholdSlider.value = v;
+  };
+  elements.passZenithThreshold?.addEventListener('change', (e) => syncPassZenith(e.target.value));
+  elements.passZenithThresholdSlider?.addEventListener('input', (e) => syncPassZenith(e.target.value));
+
+  elements.btnComputePassTime?.addEventListener('click', () => {
+    computePassTime();
   });
 
   elements.weatherClearBtn?.addEventListener('click', () => {
@@ -2518,6 +2671,140 @@ async function fetchWeatherFieldData() {
   }
 }
 
+// ── Irradiance helpers ────────────────────────────────────────────────────
+
+let irradianceChartInstance = null;
+
+function setIrradianceStatus(msg) {
+  if (elements.irradianceStatus) {
+    elements.irradianceStatus.textContent = msg || '';
+    elements.irradianceStatus.hidden = !msg;
+  }
+}
+
+async function fetchIrradiance() {
+  const station = getSelectedStation();
+  if (!station) {
+    setIrradianceStatus('Select a ground station first.');
+    return;
+  }
+  const method = elements.irradianceMethod?.value || 'analytical';
+  // Use the irradiance time input, fall back to epoch
+  let timeValue = elements.irradianceTime?.value || elements.epochInput?.value || '';
+  if (!timeValue) {
+    setIrradianceStatus('Set a time first.');
+    return;
+  }
+  // Ensure ISO format with seconds
+  if (timeValue.length === 16) timeValue += ':00';
+  const isoTime = timeValue.endsWith('Z') ? timeValue : timeValue + 'Z';
+  const altitude = parseFloat(elements.irradianceAltitude?.value) || 0;
+
+  const btn = elements.btnFetchIrradiance;
+  if (btn) btn.disabled = true;
+  setIrradianceStatus('Computing irradiance…');
+
+  const payload = {
+    lat: station.lat,
+    lon: station.lon,
+    time: isoTime,
+    method,
+    altitude_m: altitude,
+  };
+
+  try {
+    const resp = await fetch('/api/irradiance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      let detail = resp.statusText;
+      try {
+        const errBody = await resp.json();
+        if (errBody?.detail) detail = errBody.detail;
+      } catch (_) { /* ignore */ }
+      throw new Error(detail || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    displayIrradianceResults(data);
+    setIrradianceStatus(`Done — ${data.is_day ? '☀ Day' : '🌙 Night'} (${method})`);
+  } catch (err) {
+    console.error('Irradiance fetch failed', err);
+    setIrradianceStatus(`Failed: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function displayIrradianceResults(data) {
+  // Populate metric fields
+  const set = (id, val) => { if (elements[id]) elements[id].textContent = val; };
+  set('irradianceGHI', `${(data.ghi_w_m2 ?? 0).toFixed(1)} W/m²`);
+  set('irradianceDNI', `${(data.dni_w_m2 ?? 0).toFixed(1)} W/m²`);
+  set('irradianceDHI', `${(data.dhi_w_m2 ?? 0).toFixed(1)} W/m²`);
+  set('irradianceElevation', `${(data.solar_elevation_deg ?? 0).toFixed(2)}°`);
+  set('irradianceDayNight', data.is_day ? '☀ Day' : '🌙 Night');
+  set('irradianceAirMass', data.air_mass != null ? data.air_mass.toFixed(3) : '--');
+  set('irradianceDayLength', data.day_length_h != null ? `${data.day_length_h.toFixed(2)} h` : '--');
+
+  // Sunrise / sunset — analytical model returns float hours (sunrise_utc_h),
+  // format as HH:MM for display; fall back to string keys from Open-Meteo.
+  const fmtHour = (h) => {
+    if (h == null) return '--';
+    if (typeof h === 'number') {
+      const hh = Math.floor(h) % 24;
+      const mm = Math.round((h - Math.floor(h)) * 60);
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+    return String(h);
+  };
+  set('irradianceSunrise', fmtHour(data.sunrise_utc_h ?? data.sunrise_utc));
+  set('irradianceSunset', fmtHour(data.sunset_utc_h ?? data.sunset_utc));
+  set('irradianceSource', data.source ?? '--');
+
+  if (elements.irradianceMetrics) elements.irradianceMetrics.style.display = '';
+
+  // Render daily profile chart
+  const profile = data.daily_profile;
+  const canvas = elements.irradianceChart;
+  if (profile && canvas && window.Chart) {
+    canvas.style.display = '';
+    if (irradianceChartInstance) {
+      irradianceChartInstance.destroy();
+      irradianceChartInstance = null;
+    }
+    const labels = (profile.times || []).map((t) => {
+      if (typeof t === 'string' && t.includes('T')) return t.split('T')[1]?.slice(0, 5) || t;
+      return String(t);
+    });
+    irradianceChartInstance = new window.Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'GHI', data: profile.ghi_w_m2, borderColor: '#f5c542', backgroundColor: '#f5c54233', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false },
+          { label: 'DNI', data: profile.dni_w_m2, borderColor: '#ff6e40', backgroundColor: '#ff6e4033', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false },
+          { label: 'DHI', data: profile.dhi_w_m2, borderColor: '#42a5f5', backgroundColor: '#42a5f533', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } },
+          tooltip: { mode: 'index', intersect: false },
+        },
+        scales: {
+          x: { title: { display: true, text: 'UTC' }, ticks: { maxTicksLimit: 8 }, grid: { display: false } },
+          y: { title: { display: true, text: 'W/m²' }, beginAtZero: true },
+        },
+      },
+    });
+  }
+}
+
 // ── Heliocentric mode helpers ─────────────────────────────────────────────
 
 /** Update the "N samples" hint next to the helio controls. */
@@ -2758,6 +3045,13 @@ function scheduleVisualUpdate() {
     const solarData = getSolarData();
     if (solarData) {
       updateSolarFromBackend(index, solarData);
+    } else {
+      // Fallback: approximate sun direction from epoch + current offset
+      const epochMs = new Date(state.epoch).getTime();
+      const t = state.time.timeline?.[index] ?? 0;
+      const nowDate = new Date(epochMs + t * 1000);
+      const [ex, ey, ez] = approxSunDirEci(nowDate);
+      updateSolarLighting(ex, ez, -ey);
     }
 
     updateGroundTrack(groundTrack);
@@ -2785,6 +3079,23 @@ function scheduleVisualUpdate() {
 
   // TLE Constellations
   if (hasActiveConstellations()) {
+    // If no single-orbit data, drive Earth rotation + sun from constellation GMST
+    if (!dataPoints || !dataPoints.length) {
+      const posMap = state.computed?.constellationPositions ?? {};
+      const firstGroup = Object.values(posMap)[0];
+      const firstSat = firstGroup?.satellites?.[0];
+      const snap = firstSat?.timeline?.[index];
+      if (snap?.gmst != null) {
+        setEarthRotationFromTime(snap.gmst);
+      }
+      // Approximate sun direction for this timestep
+      const epochMs = new Date(state.epoch).getTime();
+      const t = state.time.timeline?.[index] ?? 0;
+      if (!Number.isNaN(epochMs)) {
+        const [ex, ey, ez] = approxSunDirEci(new Date(epochMs + t * 1000));
+        updateSolarLighting(ex, ez, -ey);
+      }
+    }
     if (state.time.index !== lastConstellationIndex) {
       if (!Object.keys(state.computed?.constellationPositions ?? {}).length) {
         refreshConstellationPositions();
@@ -2871,9 +3182,6 @@ function updateConstellationVisuals(targetIndex = null) {
         alt: snapshot.alt,
         rEci: snapshot.rEci,
         gmst: snapshot.gmst,
-        // Pass the full ground track and orbit path for this satellite
-        groundTrack: satellite.groundTrack,
-        orbitPath: satellite.orbitPath,
       });
     });
 
@@ -3070,6 +3378,62 @@ function updateChartTheme() {
     }
     chart.update('none');
   });
+}
+
+// ── Pass time over OGS computation ─────────────────────────────────────
+function computePassTime() {
+  const timeline = Array.isArray(state.time.timeline) ? state.time.timeline : [];
+  const metrics  = state.computed?.metrics ?? {};
+  const elevArr  = metrics.elevationDeg ?? [];
+  const resultsEl = elements.passTimeResults;
+
+  if (!timeline.length || !elevArr.length) {
+    if (resultsEl) resultsEl.style.display = 'none';
+    return;
+  }
+
+  const maxZenith = Number(elements.passZenithThreshold?.value ?? 70);
+  const minElev   = 90 - maxZenith;          // elevation threshold
+
+  let totalTime   = 0;   // seconds with LOS
+  let passCount   = 0;
+  let longestPass = 0;
+  let currentPass = 0;
+  let inPass      = false;
+
+  for (let i = 0; i < elevArr.length; i++) {
+    const elev = elevArr[i];
+    // Determine the time step (dt) for this sample
+    let dt;
+    if (i === 0) {
+      dt = timeline.length > 1 ? (timeline[1] - timeline[0]) : 0;
+    } else {
+      dt = timeline[i] - timeline[i - 1];
+    }
+
+    if (elev >= minElev && elev > 0) {
+      // Satellite above the zenith-angle threshold and above horizon
+      totalTime  += dt;
+      currentPass += dt;
+      if (!inPass) { passCount++; inPass = true; }
+    } else {
+      if (inPass) {
+        longestPass = Math.max(longestPass, currentPass);
+        currentPass = 0;
+        inPass = false;
+      }
+    }
+  }
+  // Close a pass that extends to the end of the timeline
+  if (inPass) {
+    longestPass = Math.max(longestPass, currentPass);
+  }
+
+  // Display results
+  if (resultsEl) resultsEl.style.display = '';
+  if (elements.passTimeTotalMetric)   elements.passTimeTotalMetric.textContent   = formatDuration(totalTime);
+  if (elements.passTimeCountMetric)   elements.passTimeCountMetric.textContent   = String(passCount);
+  if (elements.passTimeLongestMetric)  elements.passTimeLongestMetric.textContent = formatDuration(longestPass);
 }
 
 function showModalGraph(graphId) {
@@ -3476,12 +3840,18 @@ async function initialize() {
     console.warn('Error while initializing accordions', e);
   }
   bindEvents();
+  // Pre-fill irradiance time picker from epoch
+  if (elements.irradianceTime && state.epoch) {
+    elements.irradianceTime.value = state.epoch.slice(0, 16);
+  }
   hasMapBeenFramed = false;
   hasSceneBeenFramed = false;
 
   mapInstance = initMap(elements.mapContainer);
   setBaseLayer(currentMapStyle);
   await initScene(elements.threeContainer);
+  // Sync Earth rotation & sun direction to initial epoch
+  syncSceneToEpoch();
   // mark 3D as ready for debug queries
   try { window.__scene3dReady = true; } catch (e) {}
   // restore saved optimization points from localStorage
