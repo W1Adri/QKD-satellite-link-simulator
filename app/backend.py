@@ -10,13 +10,13 @@
 #   uvicorn app.backend:app --reload
 #   python run_app.py
 # ---------------------------------------------------------------------------
-from __future__ import annotations
+from __future__ import annotations  # Postpone annotation evaluation (cleaner type hints, fewer import-order issues).
 
-from pathlib import Path
+from pathlib import Path  # Filesystem path utilities used to locate static/data files relative to this module.
 
-from fastapi import FastAPI
-from fastapi.concurrency import run_in_threadpool
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI  # Core FastAPI application class used to create the ASGI app instance.
+from fastapi.concurrency import run_in_threadpool  # Runs blocking sync work safely from async startup/request contexts.
+from fastapi.staticfiles import StaticFiles  # ASGI helper to serve assets under the /static URL path.
 
 # ── Paths ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,11 +24,11 @@ STATIC_DIR = BASE_DIR / "static"
 DATA_PATH = STATIC_DIR / "ogs_locations.json"
 
 # ── Service singletons ──────────────────────────────────────────────────
-from .services.database import DatabaseGateway        # noqa: E402
-from .services.ogs_store import OGSStore              # noqa: E402
-from .services.atmosphere_svc import AtmosphereService  # noqa: E402
-from .services.weather_svc import WeatherFieldService   # noqa: E402
-from .services.tle_service import TleService            # noqa: E402
+from .services.database import DatabaseGateway        # noqa: E402  # DB access layer (users/chats bootstrap and queries).
+from .services.ogs_store import OGSStore              # noqa: E402  # Persistence for OGS location records (JSON-backed store).
+from .services.atmosphere_svc import AtmosphereService  # noqa: E402  # Computes atmosphere profiles used by link calculations.
+from .services.weather_svc import WeatherFieldService   # noqa: E402  # Provides weather-field data for atmospheric modeling.
+from .services.tle_service import TleService            # noqa: E402  # Manages TLE retrieval/lookup for orbit-related endpoints.
 
 
 def create_app() -> FastAPI:

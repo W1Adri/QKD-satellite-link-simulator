@@ -141,6 +141,27 @@ class SolveRequest(BaseModel):
     walker_P: Optional[int] = None
     walker_F: Optional[int] = None
 
+    # ── Link-budget extensions (all optional, backward-compatible) ────
+    # Pointing error (QUARC model)
+    pointing_error_urad: float = 0.0
+
+    # Scintillation fading
+    scintillation_enabled: bool = False
+    scintillation_p0: float = Field(default=0.01, gt=0.0, lt=1.0)
+
+    # Atmosphere attenuation (zenith values, dB)
+    atm_zenith_aod_db: float = Field(default=0.0, ge=0.0)
+    atm_zenith_abs_db: float = Field(default=0.0, ge=0.0)
+
+    # Fixed optical losses excluding detector (dB)
+    fixed_optics_loss_db: float = Field(default=0.0, ge=0.0)
+
+    # Background noise
+    background_enabled: bool = False
+    background_Hrad_W_m2_sr_um: float = Field(default=0.0, ge=0.0)
+    background_fov_mrad: float = Field(default=0.0, ge=0.0)
+    background_delta_lambda_nm: float = Field(default=0.0, ge=0.0)
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 

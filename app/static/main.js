@@ -368,7 +368,7 @@ function cacheElements() {
     'dopplerMetric', 'threeContainer', 'mapContainer', 'orbitMessages',
     'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave', 'stationCancel',
     'optimizerForm', 'optSearchBtn', 'optSummary', 'optResults',
-    'graphModal', 'graphModalTitle', 'modalChartCanvas', 'closeGraphModal',
+    'graphModal', 'graphModalTitle', 'modalChartCanvas', 'closeGraphModal', 'resetZoomBtn',
     'groundCn2Day', 'groundCn2Night', 'r0Metric', 'fGMetric', 'theta0Metric', 'windMetric',
     'stationPickOnMap', 'stationPickHint', 'optDiagnostics', 'resonanceGraph',
     'weatherFieldSelect', 'weatherLevelSelect', 'weatherSamples', 'weatherSamplesSlider',
@@ -380,6 +380,16 @@ function cacheElements() {
     'qkdProtocol', 'photonRate', 'photonRateSlider', 'detectorEfficiency', 'detectorEfficiencySlider',
     'darkCountRate', 'darkCountRateSlider', 'opticalFilterBandwidth', 'opticalFilterBandwidthSlider',
     'btnCalculateQKD', 'qkdStatus', 'qberMetric', 'rawKeyRateMetric', 'secureKeyRateMetric', 'channelTransmittanceMetric',
+    // Link Budget elements
+    'atmZenithAod', 'atmZenithAodSlider', 'atmZenithAbs', 'atmZenithAbsSlider',
+    'pointingErrorUrad', 'pointingErrorUradSlider',
+    'fixedOpticsLoss', 'fixedOpticsLossSlider',
+    'scintillationEnabled', 'scintillationP0', 'scintillationP0Slider', 'scintillationFields',
+    'backgroundEnabled', 'bgRadiance', 'bgFovMrad', 'bgFovMradSlider',
+    'bgDeltaLambda', 'bgDeltaLambdaSlider', 'backgroundFields',
+    // Link Budget analytics metrics
+    'geoLossMetric', 'atmLossMetric', 'pointingLossMetric', 'scintLossMetric',
+    'fixedLossMetric', 'totalLossMetric', 'bgNoiseMetric', 'couplingMetric',
     'j2Toggle',
     // SSO panel elements
     'ssoToggle', 'ssoFields', 'ssoAltitude', 'ssoAltitudeSlider', 'ssoEccentricity',
@@ -1284,6 +1294,14 @@ function bindEvents() {
     ['groundAperture', 'groundApertureSlider', (value) => clamp(Number(value), 0.1, 5), 'optical.groundAperture'],
     ['wavelength', 'wavelengthSlider', (value) => clamp(Number(value), 600, 1700), 'optical.wavelength'],
     ['samplesPerOrbit', 'samplesPerOrbitSlider', (value) => clamp(Number(value), 60, 720), 'samplesPerOrbit'],
+    // Link Budget slider pairs
+    ['atmZenithAod', 'atmZenithAodSlider', (value) => clamp(Number(value), 0, 10), 'linkBudget.atmZenithAod'],
+    ['atmZenithAbs', 'atmZenithAbsSlider', (value) => clamp(Number(value), 0, 10), 'linkBudget.atmZenithAbs'],
+    ['pointingErrorUrad', 'pointingErrorUradSlider', (value) => clamp(Number(value), 0, 50), 'linkBudget.pointingErrorUrad'],
+    ['fixedOpticsLoss', 'fixedOpticsLossSlider', (value) => clamp(Number(value), 0, 20), 'linkBudget.fixedOpticsLoss'],
+    ['scintillationP0', 'scintillationP0Slider', (value) => clamp(Number(value), 0.001, 0.5), 'linkBudget.scintillationP0'],
+    ['bgFovMrad', 'bgFovMradSlider', (value) => clamp(Number(value), 0.01, 10), 'linkBudget.bgFovMrad'],
+    ['bgDeltaLambda', 'bgDeltaLambdaSlider', (value) => clamp(Number(value), 0.01, 50), 'linkBudget.bgDeltaLambda'],
   ];
 
   sliderPairs.forEach(([inputId, sliderId, normalize, path, spanId = null]) => {
@@ -1302,6 +1320,7 @@ function bindEvents() {
         if (section === 'orbital') draft.orbital[field] = valueToAssign;
         else if (section === 'optical') draft.optical[field] = valueToAssign;
         else if (section === 'resonance') draft.resonance[field] = valueToAssign;
+        else if (section === 'linkBudget') draft.linkBudget[field] = valueToAssign;
         else draft[field] = valueToAssign;
       });
     };
@@ -1333,6 +1352,24 @@ function bindEvents() {
       draft.orbital.j2Enabled = event.target.checked;
     });
     await recomputeOrbit(true);
+  });
+
+  // ── Link Budget checkbox & input handlers ─────────────────────────────
+  elements.scintillationEnabled?.addEventListener('change', (event) => {
+    mutate((draft) => { draft.linkBudget.scintillationEnabled = event.target.checked; });
+    if (elements.scintillationFields) {
+      elements.scintillationFields.style.opacity = event.target.checked ? '1' : '0.5';
+    }
+  });
+  elements.backgroundEnabled?.addEventListener('change', (event) => {
+    mutate((draft) => { draft.linkBudget.backgroundEnabled = event.target.checked; });
+    if (elements.backgroundFields) {
+      elements.backgroundFields.style.opacity = event.target.checked ? '1' : '0.5';
+    }
+  });
+  elements.bgRadiance?.addEventListener('change', (event) => {
+    const val = Math.max(0, Number(event.target.value) || 0);
+    mutate((draft) => { draft.linkBudget.bgRadiance = val; });
   });
 
   // ── SSO panel event handlers ────────────────────────────────────────────
@@ -2048,8 +2085,15 @@ function bindEvents() {
     try {
       const { logInfo, validateNumber } = require('utils');
       
-      // Get current link loss from computed metrics
-      const currentLoss = state.computed?.linkLoss || 0;
+      // Get current link loss from computed metrics at current time index
+      const metricsData = state.computed?.metrics;
+      const timeIndex = state.time?.index ?? 0;
+      let currentLoss = 0;
+      if (metricsData?.totalLossDb?.length > timeIndex) {
+        currentLoss = metricsData.totalLossDb[timeIndex] || 0;
+      } else if (metricsData?.lossDb?.length > timeIndex) {
+        currentLoss = metricsData.lossDb[timeIndex] || 0;
+      }
       
       // Get QKD parameters from UI
       const protocol = elements.qkdProtocol?.value || 'bb84';
@@ -2325,6 +2369,20 @@ function bindEvents() {
     elements.graphModal?.close();
   });
 
+  // Reset zoom button
+  elements.resetZoomBtn?.addEventListener('click', () => {
+    if (modalChartInstance && typeof modalChartInstance.resetZoom === 'function') {
+      modalChartInstance.resetZoom();
+    }
+  });
+
+  // Double-click on chart to reset zoom
+  elements.modalChartCanvas?.addEventListener('dblclick', () => {
+    if (modalChartInstance && typeof modalChartInstance.resetZoom === 'function') {
+      modalChartInstance.resetZoom();
+    }
+  });
+
   if (elements.stationDialog) {
     const dragHandle = elements.stationDialog.querySelector('.dialog-drag-handle');
     dragHandle?.addEventListener('pointerdown', (event) => {
@@ -2439,6 +2497,7 @@ function orbitSignature(snapshot) {
 function metricsSignature(snapshot) {
   return JSON.stringify({
     optical: snapshot.optical,
+    linkBudget: snapshot.linkBudget,
     station: snapshot.stations.selectedId,
     stations: snapshot.stations.list.map((s) => s.id),
     atmosphere: snapshot.atmosphere?.model ?? 'hufnagel-valley',
@@ -3206,6 +3265,14 @@ function updateMetricsUI(index) {
     if (elements.fGMetric) elements.fGMetric.textContent = '--';
     if (elements.theta0Metric) elements.theta0Metric.textContent = '--';
     if (elements.windMetric) elements.windMetric.textContent = '--';
+    if (elements.geoLossMetric) elements.geoLossMetric.textContent = '--';
+    if (elements.atmLossMetric) elements.atmLossMetric.textContent = '--';
+    if (elements.pointingLossMetric) elements.pointingLossMetric.textContent = '--';
+    if (elements.scintLossMetric) elements.scintLossMetric.textContent = '--';
+    if (elements.fixedLossMetric) elements.fixedLossMetric.textContent = '--';
+    if (elements.totalLossMetric) elements.totalLossMetric.textContent = '--';
+    if (elements.bgNoiseMetric) elements.bgNoiseMetric.textContent = '--';
+    if (elements.couplingMetric) elements.couplingMetric.textContent = '--';
     if (elements.timeLabel) elements.timeLabel.textContent = '0 s';
     if (elements.elevationLabel) elements.elevationLabel.textContent = '--';
     if (elements.lossLabel) elements.lossLabel.textContent = '--';
@@ -3245,6 +3312,25 @@ function updateMetricsUI(index) {
   if (elements.theta0Metric) elements.theta0Metric.textContent = formatThetaArcsec(thetaArcsec);
   if (elements.windMetric) elements.windMetric.textContent = formatWindMps(windMps);
 
+  // ── Link Budget component metrics ─────────────────────────────────────
+  const geoLoss = valueFromSeries(metrics.geoLossDb, index, null);
+  const atmLoss = valueFromSeries(metrics.atmLossDb, index, null);
+  const ptLoss = valueFromSeries(metrics.pointingLossDb, index, null);
+  const scLoss = valueFromSeries(metrics.scintLossDb, index, null);
+  const fxLoss = valueFromSeries(metrics.fixedLossDb, index, null);
+  const totLoss = valueFromSeries(metrics.totalLossDb, index, null);
+  const bgNoise = valueFromSeries(metrics.backgroundCps, index, null);
+  const coupling = valueFromSeries(metrics.couplingTotal, index, null);
+  const fmtDb = (v) => (v != null && Number.isFinite(v)) ? v.toFixed(2) + ' dB' : '--';
+  if (elements.geoLossMetric) elements.geoLossMetric.textContent = fmtDb(geoLoss);
+  if (elements.atmLossMetric) elements.atmLossMetric.textContent = fmtDb(atmLoss);
+  if (elements.pointingLossMetric) elements.pointingLossMetric.textContent = fmtDb(ptLoss);
+  if (elements.scintLossMetric) elements.scintLossMetric.textContent = fmtDb(scLoss);
+  if (elements.fixedLossMetric) elements.fixedLossMetric.textContent = fmtDb(fxLoss);
+  if (elements.totalLossMetric) elements.totalLossMetric.textContent = fmtDb(totLoss);
+  if (elements.bgNoiseMetric) elements.bgNoiseMetric.textContent = (bgNoise != null && Number.isFinite(bgNoise)) ? bgNoise.toFixed(0) + ' cps' : '--';
+  if (elements.couplingMetric) elements.couplingMetric.textContent = (coupling != null && Number.isFinite(coupling)) ? (coupling * 100).toFixed(4) + ' %' : '--';
+
   if (elements.timeLabel) {
     const t = state.time.timeline[index] ?? 0;
     if (state.sceneMode === 'helio' && t >= 86400) {
@@ -3272,6 +3358,12 @@ function updateMetricsUI(index) {
 function createLineChart(canvas, { color }) {
   const ChartJS = window.Chart;
   if (!canvas || !ChartJS) return null;
+  // Register zoom plugin if available (UMD builds may use different global names)
+  const zoomPlugin = window.ChartZoom || window['chartjs-plugin-zoom'];
+  if (zoomPlugin && !ChartJS._zoomPluginRegistered) {
+    ChartJS.register(zoomPlugin);
+    ChartJS._zoomPluginRegistered = true;
+  }
   if (typeof ChartJS.getChart === 'function') {
     let existing = ChartJS.getChart(canvas);
     if (!existing && canvas.id) {
@@ -3312,6 +3404,18 @@ function createLineChart(canvas, { color }) {
               if (value == null || Number.isNaN(value)) return `${lineLabel}: --`;
               return `${lineLabel}: ${value.toFixed(2)}`;
             },
+          },
+        },
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: 'xy',
+          },
+          zoom: {
+            wheel: { enabled: true, speed: 0.08 },
+            pinch: { enabled: true },
+            drag: { enabled: false },
+            mode: 'xy',
           },
         },
       },
@@ -3489,6 +3593,42 @@ function showModalGraph(graphId) {
       color: '#f59e0b',
       datasetLabel: 'Wind (m/s)',
     },
+    // Link Budget graphs
+    totalLoss: {
+      data: metrics.totalLossDb ?? [],
+      title: 'Total Link Loss vs Time',
+      yLabel: 'Total loss (dB)',
+      color: '#ef4444',
+      datasetLabel: 'Total loss (dB)',
+    },
+    atmLoss: {
+      data: metrics.atmLossDb ?? [],
+      title: 'Atmospheric Loss vs Time',
+      yLabel: 'Atm loss (dB)',
+      color: '#8b5cf6',
+      datasetLabel: 'Atm loss (dB)',
+    },
+    pointingLoss: {
+      data: metrics.pointingLossDb ?? [],
+      title: 'Pointing Loss vs Time',
+      yLabel: 'Pointing loss (dB)',
+      color: '#ec4899',
+      datasetLabel: 'Pointing loss (dB)',
+    },
+    scintLoss: {
+      data: metrics.scintLossDb ?? [],
+      title: 'Scintillation Loss vs Time',
+      yLabel: 'Scintillation loss (dB)',
+      color: '#14b8a6',
+      datasetLabel: 'Scintillation loss (dB)',
+    },
+    backgroundNoise: {
+      data: metrics.backgroundCps ?? [],
+      title: 'Background Noise vs Time',
+      yLabel: 'Background (cps)',
+      color: '#f97316',
+      datasetLabel: 'Background noise (cps)',
+    },
   };
 
   const config = graphConfig[graphId];
@@ -3515,6 +3655,10 @@ function showModalGraph(graphId) {
   modalChartInstance.data.datasets[0].borderColor = config.color;
   modalChartInstance.data.datasets[0].backgroundColor = `${config.color}33`;
   modalChartInstance.options.scales.y.title.text = config.yLabel;
+  // Reset zoom before loading new data
+  if (typeof modalChartInstance.resetZoom === 'function') {
+    modalChartInstance.resetZoom('none');
+  }
   modalChartInstance.update('none');
   updateChartTheme();
 
@@ -3525,7 +3669,6 @@ function showModalGraph(graphId) {
   }
   requestAnimationFrame(() => {
     modalChartInstance.resize();
-    elements.closeGraphModal?.focus();
   });
 }
 

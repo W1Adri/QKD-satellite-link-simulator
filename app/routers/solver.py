@@ -14,7 +14,7 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -25,6 +25,39 @@ from ..physics.propagation import propagate_orbit
 from ..physics.qkd import calculate_qkd
 
 router = APIRouter(prefix="/api", tags=["Solver"])
+
+
+def _build_cn2_layers(req: SolveRequest) -> Optional[List[Tuple[float, float]]]:
+    """Build Cn² layer list for scintillation if atmosphere model is set.
+
+    Returns list of (altitude_m, Cn²) tuples or None.
+    """
+    if not req.scintillation_enabled or not req.atmosphere_model:
+        return None
+    try:
+        from ..services.atmosphere_svc import AtmosphereService, AtmosphereQuery
+        from datetime import datetime
+
+        query = AtmosphereQuery(
+            lat=req.station_lat or 0.0,
+            lon=req.station_lon or 0.0,
+            timestamp=datetime.fromisoformat(req.epoch) if req.epoch else datetime.utcnow(),
+            model=req.atmosphere_model,
+            ground_cn2_day=req.ground_cn2_day,
+            ground_cn2_night=req.ground_cn2_night,
+            wavelength_nm=req.wavelength_nm,
+        )
+        svc = AtmosphereService()
+        profile = svc.build_profile(query)
+        if profile and profile.layers:
+            return [
+                (layer.alt_km * 1000.0, layer.cn2)
+                for layer in profile.layers
+                if layer.cn2 is not None
+            ]
+    except Exception:
+        pass  # fall back to no scintillation
+    return None
 
 
 def _run_solve(req: SolveRequest) -> Dict[str, Any]:
@@ -64,8 +97,28 @@ def _run_solve(req: SolveRequest) -> Dict[str, Any]:
             "groundAperture": req.ground_aperture_m,
             "wavelength": req.wavelength_nm,
         }
+
+        # Build link-budget configuration from request fields
+        link_budget_cfg = {
+            "pointing_error_urad": req.pointing_error_urad,
+            "atm_zenith_aod_db": req.atm_zenith_aod_db,
+            "atm_zenith_abs_db": req.atm_zenith_abs_db,
+            "fixed_optics_loss_db": req.fixed_optics_loss_db,
+            "scintillation_enabled": req.scintillation_enabled,
+            "scintillation_p0": req.scintillation_p0,
+            "background_enabled": req.background_enabled,
+            "background_Hrad_W_m2_sr_um": req.background_Hrad_W_m2_sr_um,
+            "background_fov_mrad": req.background_fov_mrad,
+            "background_delta_lambda_nm": req.background_delta_lambda_nm,
+        }
+
+        # Cn² layers for scintillation
+        cn2_layers = _build_cn2_layers(req)
+
         metrics = compute_station_metrics(
-            prop["data_points"], station, optics, None
+            prop["data_points"], station, optics, None,
+            link_budget_cfg=link_budget_cfg,
+            cn2_layers=cn2_layers,
         )
         result["station_metrics"] = metrics
 
@@ -77,12 +130,17 @@ def _run_solve(req: SolveRequest) -> Dict[str, Any]:
                 if elev <= 0:
                     continue
                 loss_db = metrics["lossDb"][i]
-                coupling = 10 ** (-loss_db / 10.0)
+
+                # Effective dark count rate: base + background
+                dark_eff = req.dark_count_rate
+                if req.background_enabled:
+                    dark_eff += metrics["backgroundCps"][i]
+
                 qkd_params = {
                     "photonRate": req.photon_rate,
-                    "coupling": coupling,
+                    "channelLossdB": loss_db,
                     "detectorEfficiency": req.detector_efficiency,
-                    "darkCountRate": req.dark_count_rate,
+                    "darkCountRate": dark_eff,
                     "distance": metrics["distanceKm"][i],
                     "elevationDeg": elev,
                 }

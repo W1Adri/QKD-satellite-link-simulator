@@ -48,6 +48,10 @@
           <span class="nav-icon">🔭</span>
           <span class="nav-label">Optics</span>
         </button>
+        <button class="nav-item" data-section="linkbudget" title="Link Budget" data-title="Link Budget">
+          <span class="nav-icon">📉</span>
+          <span class="nav-label">Link Budget</span>
+        </button>
         <button class="nav-item" data-section="stations" title="Ground Stations" data-title="Ground Stations">
           <span class="nav-icon">📡</span>
           <span class="nav-label">Stations</span>
@@ -458,6 +462,121 @@
             </div>
           </section>
 
+          <section class="panel-section" data-section="linkbudget" hidden>
+            <div class="section-header">
+              <h2>📉 Link Budget</h2>
+              <p class="section-desc">Configure atmospheric, pointing, scintillation, and fixed optical losses for the downlink</p>
+            </div>
+
+            <div class="info-message">
+              <strong>Note:</strong> These parameters extend the geometric loss with realistic channel impairments. Changes are reflected in real-time metrics and QKD calculations.
+            </div>
+
+            <!-- Atmospheric losses -->
+            <h3>Atmospheric Attenuation</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="atmZenithAod">Zenith aerosol optical depth (dB)</label>
+                  <button type="button" class="info-button" aria-label="Zenith AOD info" data-info="One-way aerosol optical depth at zenith in dB. Typical clear sky: 0.5–1 dB. Scales with airmass (1/cos zenith).">!</button>
+                </div>
+                <input id="atmZenithAod" type="number" min="0" max="10" step="0.1" value="0.5" />
+                <input id="atmZenithAodSlider" type="range" min="0" max="10" step="0.1" value="0.5" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="atmZenithAbs">Zenith molecular absorption (dB)</label>
+                  <button type="button" class="info-button" aria-label="Zenith absorption info" data-info="One-way molecular absorption at zenith in dB. Wavelength-dependent; typically 0.1–0.5 dB at 810 nm. Scales with airmass.">!</button>
+                </div>
+                <input id="atmZenithAbs" type="number" min="0" max="10" step="0.1" value="0.3" />
+                <input id="atmZenithAbsSlider" type="range" min="0" max="10" step="0.1" value="0.3" />
+              </div>
+            </div>
+
+            <!-- Pointing error -->
+            <h3>Pointing Error</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="pointingErrorUrad">Pointing jitter (μrad, 1σ)</label>
+                  <button type="button" class="info-button" aria-label="Pointing error info" data-info="One-sigma pointing error of the satellite transmitter in microradians. Typical LEO satellites: 1–10 μrad.">!</button>
+                </div>
+                <input id="pointingErrorUrad" type="number" min="0" max="50" step="0.5" value="2.0" />
+                <input id="pointingErrorUradSlider" type="range" min="0" max="50" step="0.5" value="2.0" />
+              </div>
+            </div>
+
+            <!-- Fixed optical losses -->
+            <h3>Fixed Optical Losses</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="fixedOpticsLoss">System optics loss (dB)</label>
+                  <button type="button" class="info-button" aria-label="Fixed optics info" data-info="Constant optical losses from transmitter optics, receiver optics, fibre coupling, filters, etc. Typical: 3–6 dB.">!</button>
+                </div>
+                <input id="fixedOpticsLoss" type="number" min="0" max="20" step="0.1" value="3.0" />
+                <input id="fixedOpticsLossSlider" type="range" min="0" max="20" step="0.1" value="3.0" />
+              </div>
+            </div>
+
+            <!-- Scintillation -->
+            <h3>Scintillation</h3>
+            <div class="field-group">
+              <div class="field">
+                <input id="scintillationEnabled" type="checkbox" />
+                <label for="scintillationEnabled">Enable scintillation loss</label>
+                <button type="button" class="info-button" aria-label="Scintillation info" data-info="Intensity fluctuations caused by atmospheric turbulence (Cn² profile). Adds a fade margin based on Rytov variance and a specified outage probability.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="scintillationFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="scintillationP0">Outage probability</label>
+                  <button type="button" class="info-button" aria-label="Outage probability info" data-info="Fraction of time the scintillation fade exceeds the budgeted margin. Lower values → higher fade margin. Typical: 0.01 (1%).">!</button>
+                </div>
+                <input id="scintillationP0" type="number" min="0.001" max="0.5" step="0.001" value="0.01" />
+                <input id="scintillationP0Slider" type="range" min="0.001" max="0.5" step="0.001" value="0.01" />
+              </div>
+            </div>
+
+            <!-- Background noise -->
+            <h3>Background Noise</h3>
+            <div class="field-group">
+              <div class="field">
+                <input id="backgroundEnabled" type="checkbox" />
+                <label for="backgroundEnabled">Enable background radiance</label>
+                <button type="button" class="info-button" aria-label="Background noise info" data-info="Adds sky-background photon noise from scattered sunlight or moonlight. Computes count rate from spectral radiance, FOV, receiver aperture and filter bandwidth.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="backgroundFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="bgRadiance">Spectral radiance (W/m²/sr/μm)</label>
+                  <button type="button" class="info-button" aria-label="Spectral radiance info" data-info="Sky spectral radiance at the operating wavelength. Daytime ≈ 10–100 W/m²/sr/μm; night-time ≈ 1e-5.">!</button>
+                </div>
+                <input id="bgRadiance" type="number" min="0" max="200" step="0.01" value="10" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="bgFovMrad">Receiver FOV (mrad)</label>
+                  <button type="button" class="info-button" aria-label="FOV info" data-info="Half-angle field of view of the ground receiver in milliradians. Narrows background collection.">!</button>
+                </div>
+                <input id="bgFovMrad" type="number" min="0.01" max="10" step="0.01" value="0.1" />
+                <input id="bgFovMradSlider" type="range" min="0.01" max="10" step="0.01" value="0.1" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="bgDeltaLambda">Filter bandwidth (nm)</label>
+                  <button type="button" class="info-button" aria-label="Filter bandwidth info" data-info="Spectral width of the receiver bandpass filter in nanometres. Narrower filters reject more background.">!</button>
+                </div>
+                <input id="bgDeltaLambda" type="number" min="0.01" max="50" step="0.01" value="1.0" />
+                <input id="bgDeltaLambdaSlider" type="range" min="0.01" max="50" step="0.01" value="1.0" />
+              </div>
+            </div>
+          </section>
+
           <section class="panel-section" data-section="stations">
             <div class="section-header">
               <h2>📡 Ground Stations</h2>
@@ -559,6 +678,58 @@
                 <strong id="windMetric">--</strong>
               </p>
             </section>
+
+            <section class="instant-metrics" aria-live="polite">
+              <h4 class="metrics-title">📉 Link Budget Breakdown</h4>
+              <p>
+                <span class="metric-label">Geometric loss
+                  <button type="button" class="info-button" aria-label="Geo loss info" data-info="Free-space diffraction loss from beam divergence and finite receiver aperture.">!</button>
+                </span>
+                <strong id="geoLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Atmospheric loss
+                  <button type="button" class="info-button" aria-label="Atm loss info" data-info="Combined aerosol optical depth and molecular absorption, scaled by airmass.">!</button>
+                </span>
+                <strong id="atmLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Pointing loss
+                  <button type="button" class="info-button" aria-label="Pointing loss info" data-info="Power penalty from satellite transmitter pointing jitter.">!</button>
+                </span>
+                <strong id="pointingLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Scintillation loss
+                  <button type="button" class="info-button" aria-label="Scintillation loss info" data-info="Fade margin from atmospheric turbulence scintillation at the specified outage probability.">!</button>
+                </span>
+                <strong id="scintLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Fixed optics loss
+                  <button type="button" class="info-button" aria-label="Fixed loss info" data-info="Constant loss from transmitter/receiver optics, filters, and fibre coupling.">!</button>
+                </span>
+                <strong id="fixedLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label"><strong>Total link loss</strong>
+                  <button type="button" class="info-button" aria-label="Total loss info" data-info="Sum of all loss components: geometric + atmospheric + pointing + scintillation + fixed optics.">!</button>
+                </span>
+                <strong id="totalLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Channel coupling
+                  <button type="button" class="info-button" aria-label="Coupling info" data-info="Overall power coupling efficiency (linear) combining all loss mechanisms.">!</button>
+                </span>
+                <strong id="couplingMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Background noise
+                  <button type="button" class="info-button" aria-label="Background info" data-info="Sky background photon count rate from scattered light entering the receiver (counts per second).">!</button>
+                </span>
+                <strong id="bgNoiseMetric">--</strong>
+              </p>
+            </section>
             <h4 class="metrics-title">📈 Full Pass Metrics</h4>
             <p>Select a metric to visualize evolution over the complete pass.</p>
             <ul class="metric-graph-list">
@@ -603,6 +774,41 @@
                   <button type="button" class="info-button" aria-label="Wind plot info" data-info="High-altitude wind speed used in turbulence models across the simulated pass." >!</button>
                 </span>
                 <button type="button" class="btn-show-graph" data-graph-id="wind">Show graph</button>
+              </li>
+            </ul>
+
+            <h4 class="metrics-title">📉 Link Budget Graphs</h4>
+            <p>Full-pass evolution of link budget components.</p>
+            <ul class="metric-graph-list">
+              <li>
+                <span>Total link loss (dB)
+                  <button type="button" class="info-button" aria-label="Total loss plot info" data-info="Sum of all link budget loss components vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="totalLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Atmospheric loss (dB)
+                  <button type="button" class="info-button" aria-label="Atm loss plot info" data-info="Aerosol + molecular absorption vs time, scaled by airmass.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="atmLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Pointing loss (dB)
+                  <button type="button" class="info-button" aria-label="Pointing loss plot info" data-info="Power loss from satellite pointing jitter vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="pointingLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Scintillation loss (dB)
+                  <button type="button" class="info-button" aria-label="Scint loss plot info" data-info="Turbulence fade margin vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="scintLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Background noise (cps)
+                  <button type="button" class="info-button" aria-label="Background noise plot info" data-info="Sky background photon count rate vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="backgroundNoise">Show graph</button>
               </li>
             </ul>
 
@@ -1294,16 +1500,24 @@
     <option></option>
   </template>
 
-  <dialog id="graphModal" aria-labelledby="graphModalTitle">
-    <h3 id="graphModalTitle">Graph</h3>
+  <dialog id="graphModal" class="graph-dialog" aria-labelledby="graphModalTitle">
+    <div class="graph-dialog-header">
+      <h3 id="graphModalTitle">Graph</h3>
+      <div class="graph-dialog-actions">
+        <button id="resetZoomBtn" type="button" class="btn-action btn-sm" title="Reset zoom">⟳ Reset Zoom</button>
+        <button id="closeGraphModal" type="button" class="btn-action btn-sm btn-close-modal" title="Close">✕</button>
+      </div>
+    </div>
     <div class="modal-chart-container">
       <canvas id="modalChartCanvas"></canvas>
     </div>
-    <button id="closeGraphModal" type="button">Close</button>
+    <p class="graph-hint">Scroll to zoom · Click + drag to pan · Double-click to reset</p>
   </dialog> 
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.4/dist/satellite.min.js" crossorigin="anonymous"></script>
   <script type="module" src="/static/utils.js"></script>
   <script type="module" src="/static/simulation.js"></script>

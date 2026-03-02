@@ -263,11 +263,89 @@ function geometricLoss(distKm, satAp, gndAp, wavNm) {
   return { coupling: coup, lossDb: -10*Math.log10(Math.max(coup,1e-9)) };
 }
 
+// ── Link Budget helpers (client-side mirror of link_budget.py) ──────────
+
+function _erfinvApprox(x) {
+  // Winitzki approximation + one Newton step
+  const a = 0.147;
+  const lnTerm = Math.log(1 - x * x);
+  const p1 = 2 / (Math.PI * a) + lnTerm / 2;
+  let y = Math.sign(x) * Math.sqrt(Math.sqrt(p1 * p1 - lnTerm / a) - p1);
+  // Newton refinement
+  const erfY = _erf(y);
+  const dErf = (2 / Math.sqrt(Math.PI)) * Math.exp(-y * y);
+  if (Math.abs(dErf) > 1e-30) y -= (erfY - x) / dErf;
+  return y;
+}
+
+function _erf(x) {
+  // Abramowitz & Stegun approximation (max error ~1.5e-7)
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  return sign * (1 - poly * Math.exp(-x * x));
+}
+
+function atmLossDb(zenithAodDb, zenithAbsDb, elevDeg) {
+  if (elevDeg <= 0) return 0;
+  const zenRad = (90 - elevDeg) * DEG2RAD;
+  const am = 1 / Math.max(Math.cos(zenRad), 1e-6);
+  return (zenithAodDb + zenithAbsDb) * am;
+}
+
+function pointingLossDb(sigmaUrad, satAp, wavNm) {
+  if (sigmaUrad <= 0) return 0;
+  const lam = wavNm * 1e-9;
+  const thetaDiv = 1.22 * lam / Math.max(satAp, 1e-6);
+  const ratio = (sigmaUrad * 1e-6) / thetaDiv;
+  const lossLin = Math.exp(-2 * ratio * ratio);
+  return Math.max(-10 * Math.log10(Math.max(lossLin, 1e-30)), 0);
+}
+
+function scintillationLossDb(wavNm, zenDeg, distKm, cn2Layers, p0) {
+  // cn2Layers: [{h, cn2, dh}]
+  if (!cn2Layers || !cn2Layers.length) return 0;
+  const lam = wavNm * 1e-9;
+  const k = 2 * Math.PI / lam;
+  const L = distKm * 1000;
+  const zenRad = zenDeg * DEG2RAD;
+  const secZ = 1 / Math.max(Math.cos(zenRad), 1e-6);
+  let integral = 0;
+  for (const layer of cn2Layers) {
+    const z = layer.h * secZ;
+    const frac = (z > 0 && L > 0) ? z / L : 0;
+    integral += layer.cn2 * (frac ** (5 / 6)) * ((1 - frac) ** (5 / 6)) * layer.dh;
+  }
+  const rytov = 2.25 * (k ** (7 / 6)) * (L ** (11 / 6)) * secZ * integral;
+  if (rytov <= 0) return 0;
+  const sigmaI2 = Math.exp(rytov) - 1;
+  const sigmaI = Math.sqrt(Math.max(sigmaI2, 1e-30));
+  const clampP0 = Math.max(Math.min(p0, 0.5), 1e-9);
+  const z2 = _erfinvApprox(2 * clampP0 - 1);
+  const fadeDb = -10 * Math.log10(Math.exp(2 * sigmaI * z2 + sigmaI2));
+  return Math.max(fadeDb, 0);
+}
+
+function backgroundNoiseCps(Hrad, fovMrad, deltaLambda, gndAp, wavNm) {
+  if (Hrad <= 0 || fovMrad <= 0 || deltaLambda <= 0) return 0;
+  const h = 6.62607015e-34;
+  const c = 299792458;
+  const lam = wavNm * 1e-9;
+  const Ephoton = h * c / lam;
+  const omega = Math.PI * (fovMrad * 1e-3) ** 2;
+  const Ar = Math.PI * (gndAp / 2) ** 2;
+  const dlam = deltaLambda * 1e-3; // nm → µm
+  return (Hrad * omega * Ar * dlam) / Ephoton;
+}
+
 function computeStationMetrics(dataPoints, station, optical, state, atmosphereData) {
   const out = {
     distanceKm:[], elevationDeg:[], lossDb:[], doppler:[], azimuthDeg:[],
     r0_array:[], fG_array:[], theta0_array:[], wind_array:[],
     loss_aod_array:[], loss_abs_array:[],
+    // Link budget component arrays
+    geoLossDb:[], atmLossDb:[], pointingLossDb:[], scintLossDb:[],
+    fixedLossDb:[], totalLossDb:[], couplingTotal:[], backgroundCps:[],
   };
   if (!station || !dataPoints?.length) return out;
   const satAp = optical?.satAperture ?? 0.6;
@@ -280,15 +358,82 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
   const aodZ = atmosphereData?.loss_aod_db ?? 0;
   const absZ = atmosphereData?.loss_abs_db ?? 0;
 
+  // Link budget config from state
+  const lb = state?.linkBudget ?? {};
+  const lbAod = lb.atmZenithAod ?? 0;
+  const lbAbs = lb.atmZenithAbs ?? 0;
+  const lbPointUrad = lb.pointingErrorUrad ?? 0;
+  const lbFixed = lb.fixedOpticsLoss ?? 0;
+  const lbScintOn = lb.scintillationEnabled ?? false;
+  const lbScintP0 = lb.scintillationP0 ?? 0.01;
+  const lbBgOn = lb.backgroundEnabled ?? false;
+  const lbBgHrad = lb.bgRadiance ?? 0;
+  const lbBgFov = lb.bgFovMrad ?? 0;
+  const lbBgDl = lb.bgDeltaLambda ?? 0;
+
+  // Build Cn2 layers from atmosphere data if available
+  let cn2Layers = null;
+  if (lbScintOn && atmosphereData?.cn2_profile) {
+    const p = atmosphereData.cn2_profile;
+    if (Array.isArray(p.heights) && Array.isArray(p.cn2_values)) {
+      cn2Layers = [];
+      for (let i = 0; i < p.heights.length; i++) {
+        const h = p.heights[i];
+        let dh;
+        if (i === 0) dh = (p.heights.length > 1) ? (p.heights[1] - p.heights[0]) : 100;
+        else dh = p.heights[i] - p.heights[i - 1];
+        cn2Layers.push({ h, cn2: p.cn2_values[i], dh: Math.max(dh, 1) });
+      }
+    }
+  }
+
   for (const pt of dataPoints) {
     const los = losElevation(station, pt.rEcef);
     const gl  = geometricLoss(los.distanceKm, satAp, gndAp, wav);
     const dop = dopplerFactor(station, pt.rEcef, pt.vEcef, wav);
     out.distanceKm.push(los.distanceKm);
     out.elevationDeg.push(los.elevationDeg);
-    out.lossDb.push(gl.lossDb);
     out.doppler.push(dop.factor);
     out.azimuthDeg.push(los.azimuthDeg);
+
+    // Geometric loss (dB)
+    const gLoss = gl.lossDb;
+    out.geoLossDb.push(gLoss);
+
+    // Atmospheric loss (dB)
+    const aLoss = atmLossDb(lbAod, lbAbs, los.elevationDeg);
+    out.atmLossDb.push(aLoss);
+
+    // Pointing loss (dB)
+    const pLoss = pointingLossDb(lbPointUrad, satAp, wav);
+    out.pointingLossDb.push(pLoss);
+
+    // Scintillation loss (dB)
+    let sLoss = 0;
+    if (lbScintOn && cn2Layers && los.elevationDeg > 0) {
+      const zenDeg = 90 - los.elevationDeg;
+      sLoss = scintillationLossDb(wav, zenDeg, los.distanceKm, cn2Layers, lbScintP0);
+    }
+    out.scintLossDb.push(sLoss);
+
+    // Fixed optics loss (dB)
+    out.fixedLossDb.push(lbFixed);
+
+    // Total link loss (dB)
+    const tLoss = gLoss + aLoss + pLoss + sLoss + lbFixed;
+    out.totalLossDb.push(tLoss);
+    out.lossDb.push(tLoss); // overwrite lossDb with total
+
+    // Coupling
+    out.couplingTotal.push(Math.pow(10, -tLoss / 10));
+
+    // Background noise (cps)
+    let bgCps = 0;
+    if (lbBgOn && los.elevationDeg > 0) {
+      bgCps = backgroundNoiseCps(lbBgHrad, lbBgFov, lbBgDl, gndAp, wav);
+    }
+    out.backgroundCps.push(bgCps);
+
     // Atmosphere zenith scaling
     if (los.elevationDeg > 0) {
       const zen = (90 - los.elevationDeg) * DEG2RAD;

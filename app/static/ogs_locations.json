@@ -26,5 +26,125 @@
     "lon": 16.357,
     "aperture_m": 0.8,
     "id": "station-4719d4e7-3"
+  },
+  {
+    "id": "station-ac842e28",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-bf33aa24",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-b85605ed",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-4ed3a6c9",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-6f7f5cb4",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-f98495ab",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-fe205d2e",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-c24ec5df",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-720ed151",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-5a7ad22a",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-2c5c3451",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-318f5a66",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-c94612c6",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-1572fa69",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
+  },
+  {
+    "id": "station-8ca5f176",
+    "name": "Test Station",
+    "lat": 40.0,
+    "lon": 2.0,
+    "aperture_m": 1.0,
+    "notes": null
   }
 ]

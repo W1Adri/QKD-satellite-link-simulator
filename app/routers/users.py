@@ -38,6 +38,12 @@ def set_database(db) -> None:  # noqa: ANN001
     _db = db
 
 
+@router.get("/users/count", response_model=UserCount)
+async def user_count():
+    cnt = await run_in_threadpool(_db.count_users)
+    return UserCount(count=cnt)
+
+
 @router.get("/users/{user_id}", response_model=UserRead)
 async def fetch_user(user_id: int):
     rec = await run_in_threadpool(_db.get_user_by_id, user_id)
@@ -61,12 +67,6 @@ async def login_user(payload: UserCreate):
 @router.post("/logout")
 async def logout_user():
     return {"status": "ok", "message": "Logged out."}
-
-
-@router.get("/users/count", response_model=UserCount)
-async def user_count():
-    cnt = await run_in_threadpool(_db.count_users)
-    return UserCount(count=cnt)
 
 
 @router.get("/chats", response_model=List[ChatRead])
