@@ -748,11 +748,12 @@ if HAS_CLIENT:
 
     def test_ogs_add_outside_europe():
         r = client.post("/api/ogs", json={
-            "name": "Invalid Station",
+            "name": "Equatorial Station",
             "lat": 0.0,
             "lon": 0.0,
+            "aperture_m": 1.0,
         })
-        assert r.status_code == 400
+        assert r.status_code == 200
 
     def test_orbital_info():
         r = client.get("/api/orbital/info")

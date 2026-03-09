@@ -2335,23 +2335,38 @@ function updateGroundTrackVector(point) {
   }
 
   satelliteMesh.updateMatrixWorld(true);
+  earthSystemGroup?.updateMatrixWorld(true);
   if (!satelliteMesh.visible) {
     groundTrackVectorLine.visible = false;
     return;
   }
-  const satPosition = satelliteMesh.getWorldPosition(new THREE.Vector3());
+
+  // groundTrackVectorLine lives inside earthSystemGroup, so use its local frame.
+  const satWorld = satelliteMesh.getWorldPosition(new THREE.Vector3());
+  const satPosition = earthSystemGroup
+    ? earthSystemGroup.worldToLocal(satWorld.clone())
+    : satWorld;
   const satRadius = satPosition.length();
   if (!Number.isFinite(satRadius) || satRadius <= 0) {
     groundTrackVectorLine.visible = false;
     return;
   }
 
-  const nadirPosition = satPosition.clone().normalize().multiplyScalar(1.0);
+  // Prefer the same ground-point transform as the ground track path.
+  let groundPosition = null;
+  if (Number.isFinite(point.lat) && Number.isFinite(point.lon) && Number.isFinite(point.gmst)) {
+    const groundEci = orbit.latLonToEci(point.lat, point.lon, 0, point.gmst);
+    groundPosition = toVector3Eci(groundEci);
+  }
+  if (!groundPosition) {
+    // Fallback to radial nadir if lat/lon metadata is unavailable.
+    groundPosition = satPosition.clone().normalize().multiplyScalar(1.0);
+  }
 
   groundTrackVectorLine.geometry.dispose();
   groundTrackVectorLine.geometry = new THREE.BufferGeometry().setFromPoints([
     satPosition,
-    nadirPosition,
+    groundPosition,
   ]);
   groundTrackVectorLine.visible = true;
   if (typeof groundTrackVectorLine.computeLineDistances === 'function') {
@@ -2412,7 +2427,7 @@ async function initScene(container) {
   }
 }
 
-function updateOrbitPath(points) {
+function updateOrbitPath(points, { smooth = true } = {}) {
   if (!isReady || !orbitLine) return;
   if (!points?.length) {
     orbitLine.visible = false;
@@ -2427,14 +2442,19 @@ function updateOrbitPath(points) {
     orbitLine.visible = false;
     return;
   }
-  const first = vectors[0];
-  const last = vectors[vectors.length - 1];
-  const closed = first.distanceTo(last) < 1e-3;
-  const curve = new THREE.CatmullRomCurve3(vectors, closed, 'centripetal', 0.5);
-  const segments = Math.min(2048, Math.max(120, vectors.length * 3));
-  const smoothPoints = curve.getPoints(segments);
+  let renderPoints;
+  if (smooth) {
+    const first = vectors[0];
+    const last = vectors[vectors.length - 1];
+    const closed = first.distanceTo(last) < 1e-3;
+    const curve = new THREE.CatmullRomCurve3(vectors, closed, 'centripetal', 0.5);
+    const segments = Math.min(2048, Math.max(120, vectors.length * 3));
+    renderPoints = curve.getPoints(segments);
+  } else {
+    renderPoints = vectors;
+  }
   orbitLine.geometry.dispose();
-  orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
+  orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(renderPoints);
   orbitLine.visible = true;
 }
 

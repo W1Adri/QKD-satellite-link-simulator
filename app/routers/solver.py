@@ -91,7 +91,8 @@ def _run_solve(req: SolveRequest) -> Dict[str, Any]:
     # 2. Station metrics (if station is given) ─────────────────────────
     has_station = req.station_lat is not None and req.station_lon is not None
     if has_station:
-        station = {"lat": req.station_lat, "lon": req.station_lon}
+        station = {"lat": req.station_lat, "lon": req.station_lon,
+                   "altitude_m": req.station_altitude_m}
         optics = {
             "satAperture": req.sat_aperture_m,
             "groundAperture": req.ground_aperture_m,
@@ -110,6 +111,9 @@ def _run_solve(req: SolveRequest) -> Dict[str, Any]:
             "background_Hrad_W_m2_sr_um": req.background_Hrad_W_m2_sr_um,
             "background_fov_mrad": req.background_fov_mrad,
             "background_delta_lambda_nm": req.background_delta_lambda_nm,
+            "sun_exclusion_deg": req.sun_exclusion_deg,
+            "tx_power_dbm": req.tx_power_dbm,
+            "rx_sensitivity_dbm": req.rx_sensitivity_dbm,
         }
 
         # Cn² layers for scintillation
@@ -119,6 +123,8 @@ def _run_solve(req: SolveRequest) -> Dict[str, Any]:
             prop["data_points"], station, optics, None,
             link_budget_cfg=link_budget_cfg,
             cn2_layers=cn2_layers,
+            link_direction=req.link_direction,
+            epoch_iso=req.epoch,
         )
         result["station_metrics"] = metrics
 
@@ -129,18 +135,27 @@ def _run_solve(req: SolveRequest) -> Dict[str, Any]:
                 elev = metrics["elevationDeg"][i]
                 if elev <= 0:
                     continue
+
+                # Skip when link is not established (margin, eclipse, sun excl.)
+                if not metrics["linkEstablished"][i]:
+                    continue
+                if metrics["eclipsed"][i] and req.link_direction == "downlink":
+                    # Eclipse only blocks downlink (no stray light concern),
+                    # but satellite reflections go dark — skip if eclipsed.
+                    pass  # still allow; comment out to gate on eclipse
+                if metrics["sunExcluded"][i]:
+                    continue
                 loss_db = metrics["lossDb"][i]
 
-                # Effective dark count rate: base + background
-                dark_eff = req.dark_count_rate
-                if req.background_enabled:
-                    dark_eff += metrics["backgroundCps"][i]
+                # Background noise (cps at receiver input)
+                bg_cps = metrics["backgroundCps"][i] if req.background_enabled else 0.0
 
                 qkd_params = {
                     "photonRate": req.photon_rate,
                     "channelLossdB": loss_db,
                     "detectorEfficiency": req.detector_efficiency,
-                    "darkCountRate": dark_eff,
+                    "darkCountRate": req.dark_count_rate,
+                    "backgroundCps": bg_cps,
                     "distance": metrics["distanceKm"][i],
                     "elevationDeg": elev,
                 }

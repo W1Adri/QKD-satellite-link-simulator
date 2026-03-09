@@ -38,19 +38,28 @@ def calculate_bb84(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Required keys in *params*:
         photonRate, channelLossdB, detectorEfficiency, darkCountRate.
+    Optional:
+        backgroundCps – stray-light background photon rate at receiver input.
     """
     try:
         photon_rate = float(params["photonRate"])
         loss_db = float(params["channelLossdB"])
         det_eff = float(params["detectorEfficiency"])
         dark_rate = float(params["darkCountRate"])
+        bg_cps = float(params.get("backgroundCps", 0.0))
     except (KeyError, TypeError, ValueError) as exc:
         return {"error": f"Invalid BB84 input: {exc}"}
 
     eta = 10.0 ** (-loss_db / 10.0)          # channel transmittance
     mu = 0.5                                  # mean photon number
     det_rate = photon_rate * eta * det_eff * math.exp(-mu)
-    noise = dark_rate / 2.0
+
+    # Shot noise model: signal shot noise + stray-light shot noise + dark counts
+    signal_shot = det_rate                    # Poisson: variance = mean
+    stray_shot = bg_cps * det_eff
+    total_noise = dark_rate + stray_shot      # noise floor (excluding signal)
+    noise = total_noise / 2.0
+
     qber = noise / (det_rate + noise) if (det_rate + noise) > 0 else 1.0
 
     sift = 0.5
@@ -68,6 +77,9 @@ def calculate_bb84(params: Dict[str, Any]) -> Dict[str, Any]:
         "channelTransmittance": eta,
         "detectionRate": det_rate,
         "siftedKeyRate": sifted,
+        "signalShotNoiseCps": signal_shot,
+        "strayNoiseCps": stray_shot,
+        "totalNoiseCps": total_noise,
         "protocol": "BB84",
     }
 
@@ -84,12 +96,17 @@ def calculate_e91(params: Dict[str, Any]) -> Dict[str, Any]:
         loss_db = float(params["channelLossdB"])
         det_eff = float(params["detectorEfficiency"])
         dark_rate = float(params["darkCountRate"])
+        bg_cps = float(params.get("backgroundCps", 0.0))
     except (KeyError, TypeError, ValueError) as exc:
         return {"error": f"Invalid E91 input: {exc}"}
 
     eta = 10.0 ** (-loss_db / 10.0)
     coinc = pair_rate * (eta * det_eff) ** 2
-    acc = dark_rate ** 2 / max(pair_rate, 1)
+
+    # Noise: dark counts + stray-light shot noise for both detectors
+    stray_shot = bg_cps * det_eff
+    total_noise_per_det = dark_rate + stray_shot
+    acc = total_noise_per_det ** 2 / max(pair_rate, 1)
     qber = acc / (coinc + acc) if (coinc + acc) > 0 else 1.0
 
     skr = max(0.0, coinc * (1 - 2 * _h(qber)))
@@ -102,6 +119,8 @@ def calculate_e91(params: Dict[str, Any]) -> Dict[str, Any]:
         "secureKeyRate": skr / 1000,
         "channelTransmittance": eta,
         "detectionRate": coinc,
+        "strayNoiseCps": stray_shot,
+        "totalNoiseCps": total_noise_per_det,
         "protocol": "E91",
     }
 

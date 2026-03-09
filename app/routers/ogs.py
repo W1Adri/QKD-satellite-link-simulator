@@ -18,7 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from uuid import uuid4
 
-from ..models import OGSLocation, is_in_europe_bbox
+from ..models import OGSLocation
 
 router = APIRouter(prefix="/api/ogs", tags=["OGS"])
 
@@ -41,6 +41,9 @@ async def list_ogs():
         if "aperture_m" not in rec or not isinstance(rec["aperture_m"], (int, float)):
             rec["aperture_m"] = 1.0
             needs_write = True
+        if "altitude_m" not in rec or not isinstance(rec["altitude_m"], (int, float)):
+            rec["altitude_m"] = 0.0
+            needs_write = True
         if not rec.get("id"):
             rec["id"] = f"station-{uuid4().hex[:8]}-{idx}"
             needs_write = True
@@ -52,20 +55,21 @@ async def list_ogs():
 
 @router.post("", response_model=OGSLocation)
 async def add_ogs(loc: OGSLocation):
-    if not is_in_europe_bbox(loc.lat, loc.lon):
-        raise HTTPException(400, "Location outside Europe bounding box.")
     rec = await run_in_threadpool(_store.upsert, loc.dict())
     return OGSLocation(**rec)
 
 
 @router.delete("")
 async def clear_ogs():
-    await run_in_threadpool(_store.delete_all)
-    return JSONResponse({"status": "ok", "message": "All OGS deleted."})
+    await run_in_threadpool(_store.delete_user_stations)
+    return JSONResponse({"status": "ok", "message": "User-created stations deleted."})
 
 
 @router.delete("/{station_id}")
 async def delete_ogs(station_id: str):
+    is_builtin = await run_in_threadpool(_store.is_builtin, station_id)
+    if is_builtin:
+        raise HTTPException(403, "Built-in stations cannot be deleted.")
     removed = await run_in_threadpool(_store.delete, station_id)
     if not removed:
         raise HTTPException(404, "Station not found.")

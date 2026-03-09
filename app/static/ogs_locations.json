@@ -1,150 +1,176 @@
 [
   {
+    "id": "tenerife",
     "name": "Teide Observatory (ES)",
     "lat": 28.3,
     "lon": -16.509,
+    "altitude_m": 2390,
     "aperture_m": 1.0,
-    "id": "station-1789c64c-0"
+    "builtin": true
   },
   {
+    "id": "matera",
     "name": "Matera Laser Ranging (IT)",
     "lat": 40.649,
     "lon": 16.704,
+    "altitude_m": 537,
     "aperture_m": 1.5,
-    "id": "station-2048fa5e-1"
+    "builtin": true
   },
   {
-    "name": "Observatoire de la Côte d’Azur (FR)",
+    "id": "grasse",
+    "name": "Observatoire de la Côte d'Azur (FR)",
     "lat": 43.754,
     "lon": 6.92,
+    "altitude_m": 1270,
     "aperture_m": 1.54,
-    "id": "station-df416913-2"
+    "builtin": true
   },
   {
+    "id": "toulouse",
+    "name": "Toulouse Space Centre (FR)",
+    "lat": 43.604,
+    "lon": 1.444,
+    "altitude_m": 150,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "vienna",
     "name": "Vienna Observatory (AT)",
     "lat": 48.248,
     "lon": 16.357,
+    "altitude_m": 240,
     "aperture_m": 0.8,
-    "id": "station-4719d4e7-3"
+    "builtin": true
   },
   {
-    "id": "station-ac842e28",
+    "id": "sodankyla",
+    "name": "Sodankylä Geophysical (FI)",
+    "lat": 67.366,
+    "lon": 26.633,
+    "altitude_m": 180,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "matera2",
+    "name": "Matera Secondary (IT)",
+    "lat": 40.64,
+    "lon": 16.7,
+    "altitude_m": 537,
+    "aperture_m": 1.2,
+    "builtin": true
+  },
+  {
+    "id": "tenerife2",
+    "name": "La Palma Roque (ES)",
+    "lat": 28.761,
+    "lon": -17.89,
+    "altitude_m": 2326,
+    "aperture_m": 2.0,
+    "builtin": true
+  },
+  {
+    "id": "nict-koganei",
+    "name": "NICT OGS Koganei (JP)",
+    "lat": 35.71,
+    "lon": 139.489,
+    "altitude_m": 80,
+    "aperture_m": 1.5,
+    "builtin": true
+  },
+  {
+    "id": "dlr-oberpfaffenhofen",
+    "name": "DLR OGS Oberpfaffenhofen (DE)",
+    "lat": 48.084,
+    "lon": 11.28,
+    "altitude_m": 600,
+    "aperture_m": 0.4,
+    "builtin": true
+  },
+  {
+    "id": "mount-stromlo",
+    "name": "ANU Mount Stromlo QOGS (AU)",
+    "lat": -35.316,
+    "lon": 149.01,
+    "altitude_m": 770,
+    "aperture_m": 0.7,
+    "builtin": true
+  },
+  {
+    "id": "table-mountain",
+    "name": "NASA/JPL OCTL Table Mountain (US)",
+    "lat": 34.382,
+    "lon": -117.682,
+    "altitude_m": 2286,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "haleakala",
+    "name": "NASA LCRD OGS-2 Haleakalā (US)",
+    "lat": 20.708,
+    "lon": -156.257,
+    "altitude_m": 3055,
+    "aperture_m": 0.6,
+    "builtin": true
+  },
+  {
+    "id": "kasi-gamak",
+    "name": "KASI Gamak Station (KR)",
+    "lat": 35.595,
+    "lon": 127.92,
+    "altitude_m": 120,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "lijiang-gaomeigu",
+    "name": "Lijiang Gaomeigu Observatory (CN)",
+    "lat": 26.697,
+    "lon": 100.03,
+    "altitude_m": 3200,
+    "aperture_m": 1.2,
+    "builtin": true
+  },
+  {
+    "id": "dlr-calar-alto",
+    "name": "DLR Calar Alto OGS (ES)",
+    "lat": 37.224,
+    "lon": -2.546,
+    "altitude_m": 2168,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "aaaa-1773052490342",
+    "name": "aaaa",
+    "lat": 56.3659,
+    "lon": -71.209,
+    "altitude_m": 0,
+    "aperture_m": 1.0,
+    "notes": null,
+    "builtin": false
+  },
+  {
+    "id": "station-e79766c8",
     "name": "Test Station",
     "lat": 40.0,
     "lon": 2.0,
+    "altitude_m": 0.0,
     "aperture_m": 1.0,
-    "notes": null
+    "notes": null,
+    "builtin": false
   },
   {
-    "id": "station-bf33aa24",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
+    "id": "station-09ae40cb",
+    "name": "Equatorial Station",
+    "lat": 0.0,
+    "lon": 0.0,
+    "altitude_m": 0.0,
     "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-b85605ed",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-4ed3a6c9",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-6f7f5cb4",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-f98495ab",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-fe205d2e",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-c24ec5df",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-720ed151",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-5a7ad22a",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-2c5c3451",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-318f5a66",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-c94612c6",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-1572fa69",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
-  },
-  {
-    "id": "station-8ca5f176",
-    "name": "Test Station",
-    "lat": 40.0,
-    "lon": 2.0,
-    "aperture_m": 1.0,
-    "notes": null
+    "notes": null,
+    "builtin": false
   }
 ]

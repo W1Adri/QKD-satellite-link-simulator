@@ -28,11 +28,16 @@ from .link_budget import (
     atm_loss_db,
     background_noise_cps,
     coupling_from_loss,
+    is_eclipsed,
     pointing_loss_db,
+    received_power_dbm,
+    link_margin_db,
     scintillation_loss_db,
+    sun_core_angle_deg,
     total_link_loss_db,
 )
 from .propagation import ecef_from_latlon
+from .solar import sun_direction_eci, _parse_iso, _to_astro_time
 
 
 # ── ENU helpers ──────────────────────────────────────────────────────────
@@ -58,13 +63,16 @@ def los_elevation(
     """Compute slant range, elevation and azimuth from *station* to satellite.
 
     Args:
-        station: dict with keys ``lat``, ``lon`` (degrees).
+        station: dict with keys ``lat``, ``lon`` (degrees) and optional
+            ``altitude_m`` (metres above sea level, default 0).
         r_ecef: satellite ECEF position [km].
 
     Returns:
         ``{distanceKm, elevationDeg, azimuthDeg}``
     """
-    s_ecef = ecef_from_latlon(station["lat"], station["lon"])
+    alt_km = station.get("altitude_m", 0.0) / 1000.0
+    s_ecef = ecef_from_latlon(station["lat"], station["lon"],
+                              radius_km=EARTH_RADIUS_KM + alt_km)
     rel = [r_ecef[i] - s_ecef[i] for i in range(3)]
     M = _enu_matrix(station["lat"], station["lon"])
     enu = [
@@ -94,7 +102,9 @@ def doppler_factor(
     Returns:
         ``{factor, observedWavelength}``
     """
-    s_ecef = ecef_from_latlon(station["lat"], station["lon"])
+    alt_km = station.get("altitude_m", 0.0) / 1000.0
+    s_ecef = ecef_from_latlon(station["lat"], station["lon"],
+                              radius_km=EARTH_RADIUS_KM + alt_km)
     rel = [r_ecef[i] - s_ecef[i] for i in range(3)]
     dist = math.sqrt(sum(c * c for c in rel))
     unit = [c / dist for c in rel]
@@ -157,6 +167,15 @@ def _scale_atmosphere(
 
 # ── Vectorised station metrics ──────────────────────────────────────────
 
+def _ecef_to_eci(r_ecef: List[float], gmst: float) -> List[float]:
+    """Rotate ECEF position to ECI given GMST (radians)."""
+    c = math.cos(gmst)
+    s = math.sin(gmst)
+    return [c * r_ecef[0] - s * r_ecef[1],
+            s * r_ecef[0] + c * r_ecef[1],
+            r_ecef[2]]
+
+
 def compute_station_metrics(
     data_points: List[Dict[str, Any]],
     station: Dict[str, float],
@@ -165,6 +184,8 @@ def compute_station_metrics(
     *,
     link_budget_cfg: Optional[Dict[str, Any]] = None,
     cn2_layers: Optional[List] = None,
+    link_direction: str = "downlink",
+    epoch_iso: Optional[str] = None,
 ) -> Dict[str, List[float]]:
     """Compute link metrics for every point in a propagated timeline.
 
@@ -177,14 +198,21 @@ def compute_station_metrics(
             pointing_error_urad, atm_zenith_aod_db, atm_zenith_abs_db,
             fixed_optics_loss_db, scintillation_enabled, scintillation_p0,
             background_enabled, background_Hrad_W_m2_sr_um,
-            background_fov_mrad, background_delta_lambda_nm.
+            background_fov_mrad, background_delta_lambda_nm,
+            sun_exclusion_deg, tx_power_dbm, rx_sensitivity_dbm.
         cn2_layers: optional list of (altitude_m, Cn2) tuples for
             scintillation computation.
+        link_direction: ``"downlink"`` (plane wave) or ``"uplink"``
+            (spherical wave).
+        epoch_iso: ISO-8601 epoch string (needed for sun/eclipse
+            computation).
 
     Returns:
         Dict of parallel arrays.  Original keys preserved; new keys:
         geoLossDb, atmLossDb, pointingLossDb, scintLossDb, fixedLossDb,
-        totalLossDb (alias of lossDb), couplingTotal, backgroundCps.
+        totalLossDb (alias of lossDb), couplingTotal, backgroundCps,
+        sunCoreAngleDeg, eclipsed, sunExcluded, rxPowerDbm,
+        linkMarginDb, linkEstablished.
     """
     atmo = atmosphere or {}
     r0_z = atmo.get("r0_zenith", 0.1)
@@ -207,31 +235,62 @@ def compute_station_metrics(
     bg_fov = lb.get("background_fov_mrad", 0.0)
     bg_dlam = lb.get("background_delta_lambda_nm", 0.0)
 
+    # Sun / eclipse config
+    sun_excl_deg = lb.get("sun_exclusion_deg", 0.0)
+
+    # Received power / link margin config
+    tx_pwr_dbm = lb.get("tx_power_dbm", None)
+    rx_sens_dbm = lb.get("rx_sensitivity_dbm", None)
+
+    is_uplink = (link_direction or "").strip().lower() == "uplink"
+
     wl_nm = optics.get("wavelength", 810)
     sat_ap = optics.get("satAperture", 0.6)
     gnd_ap = optics.get("groundAperture", 1.0)
 
-    # Divergence for pointing loss (must match geometric_loss convention)
+    # Station altitude above sea level (metres)
+    station_alt_m = station.get("altitude_m", 0.0) if station else 0.0
+
+    # For uplink: transmitter = ground, receiver = satellite
+    # For downlink: transmitter = satellite, receiver = ground
+    tx_ap = gnd_ap if is_uplink else sat_ap
+    rx_ap = sat_ap if is_uplink else gnd_ap
+
+    # Divergence for pointing loss (uses transmitter aperture)
     lam_m = wl_nm * 1e-9
-    divergence_rad = 1.22 * lam_m / max(sat_ap, 1e-3)
+    divergence_rad = 1.22 * lam_m / max(tx_ap, 1e-3)
 
     out: Dict[str, List[float]] = {
         "distanceKm": [], "elevationDeg": [], "lossDb": [],
         "doppler": [], "azimuthDeg": [],
         "r0": [], "fG": [], "theta0": [],
         "wind": [], "aod": [], "abs": [],
-        # new component arrays
+        # link-budget component arrays
         "geoLossDb": [], "atmLossDb": [], "pointingLossDb": [],
         "scintLossDb": [], "fixedLossDb": [], "totalLossDb": [],
         "couplingTotal": [], "backgroundCps": [],
+        # sun / eclipse arrays
+        "sunCoreAngleDeg": [], "eclipsed": [], "sunExcluded": [],
+        # received power / link margin
+        "rxPowerDbm": [], "linkMarginDb": [], "linkEstablished": [],
     }
 
     if not station or not data_points:
         return out
 
+    # Parse epoch once for sun/eclipse computation
+    epoch_dt = None
+    if epoch_iso:
+        try:
+            epoch_dt = _parse_iso(epoch_iso)
+        except Exception:
+            pass  # sun/eclipse will be skipped
+
     for pt in data_points:
         los = los_elevation(station, pt["r_ecef"])
-        gl = geometric_loss(los["distanceKm"], sat_ap, gnd_ap, wl_nm)
+
+        # Geometric loss uses tx/rx apertures based on link direction
+        gl = geometric_loss(los["distanceKm"], tx_ap, rx_ap, wl_nm)
         dop = doppler_factor(
             station, pt["r_ecef"], pt["v_ecef"], wl_nm,
         )
@@ -241,12 +300,23 @@ def compute_station_metrics(
 
         elev = los["elevationDeg"]
 
+        # Satellite altitude from ECEF position (for uplink Rytov kernel)
+        r_ecef = pt["r_ecef"]
+        sat_alt_m = (
+            math.sqrt(sum(c * c for c in r_ecef)) - EARTH_RADIUS_KM
+        ) * 1000.0
+
         # ── link-budget components ──
         geo_db = gl["lossDb"]
         a_db = atm_loss_db(elev, atm_aod, atm_abs)
         p_db = pointing_loss_db(pe_urad, divergence_rad)
         s_db = (
-            scintillation_loss_db(elev, wl_nm, gnd_ap, cn2_layers, scint_p0)
+            scintillation_loss_db(
+                elev, wl_nm, rx_ap, cn2_layers, scint_p0,
+                link_direction=link_direction,
+                H_sat_m=sat_alt_m,
+                h_gs=station_alt_m,
+            )
             if scint_on else 0.0
         )
         f_db = fixed_db if elev > 0 else 0.0
@@ -255,9 +325,56 @@ def compute_station_metrics(
         coup = coupling_from_loss(t_db)
 
         bg_cps = (
-            background_noise_cps(bg_hrad, bg_fov, gnd_ap, bg_dlam, wl_nm)
+            background_noise_cps(bg_hrad, bg_fov, rx_ap, bg_dlam, wl_nm)
             if bg_on and elev > 0 else 0.0
         )
+
+        # ── sun / eclipse ──
+        sun_angle = 180.0
+        ecl = False
+        sun_excl = False
+        if epoch_dt is not None:
+            from datetime import datetime, timezone
+            t_s = pt.get("t", 0.0)
+            dt_obj = datetime.fromtimestamp(
+                epoch_dt.timestamp() + t_s, tz=timezone.utc,
+            )
+            astro_t = _to_astro_time(dt_obj)
+            sun_dir = sun_direction_eci(astro_t)
+
+            # Satellite ECI position (from data_point or convert from ECEF)
+            sat_eci = pt.get("r_eci")
+            if sat_eci is None:
+                gmst = pt.get("gmst", 0.0)
+                sat_eci = _ecef_to_eci(r_ecef, gmst)
+
+            # Station ECI position
+            gmst = pt.get("gmst", 0.0)
+            alt_km = station.get("altitude_m", 0.0) / 1000.0
+            sta_ecef = ecef_from_latlon(
+                station["lat"], station["lon"],
+                radius_km=EARTH_RADIUS_KM + alt_km,
+            )
+            sta_eci = _ecef_to_eci(sta_ecef, gmst)
+
+            sun_angle = sun_core_angle_deg(sat_eci, sta_eci, list(sun_dir))
+            ecl = is_eclipsed(sat_eci, list(sun_dir))
+            if sun_excl_deg > 0 and sun_angle < sun_excl_deg:
+                sun_excl = True
+
+        # ── received power / link margin ──
+        rx_pwr = None
+        margin = None
+        link_ok = True
+        if tx_pwr_dbm is not None:
+            rx_pwr = received_power_dbm(tx_pwr_dbm, t_db)
+            if rx_sens_dbm is not None:
+                margin = link_margin_db(rx_pwr, rx_sens_dbm)
+                link_ok = margin >= 0 and elev > 0
+            else:
+                link_ok = elev > 0
+        else:
+            link_ok = elev > 0
 
         # ── append ──
         out["distanceKm"].append(los["distanceKm"])
@@ -280,5 +397,12 @@ def compute_station_metrics(
         out["totalLossDb"].append(t_db)
         out["couplingTotal"].append(coup)
         out["backgroundCps"].append(bg_cps)
+
+        out["sunCoreAngleDeg"].append(sun_angle)
+        out["eclipsed"].append(ecl)
+        out["sunExcluded"].append(sun_excl)
+        out["rxPowerDbm"].append(rx_pwr)
+        out["linkMarginDb"].append(margin)
+        out["linkEstablished"].append(link_ok)
 
     return out

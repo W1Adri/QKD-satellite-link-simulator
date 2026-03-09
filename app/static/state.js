@@ -82,6 +82,7 @@ export const defaultState = {
     groundCn2Night: 5e-15,
   },
   linkBudget: {
+    linkDirection: 'downlink',
     atmZenithAod: 0.5,
     atmZenithAbs: 0.3,
     pointingErrorUrad: 2.0,
@@ -92,6 +93,9 @@ export const defaultState = {
     bgRadiance: 10,
     bgFovMrad: 0.1,
     bgDeltaLambda: 1.0,
+    sunExclusionDeg: 0,
+    txPowerDbm: 30,
+    rxSensitivityDbm: -90,
   },
   atmosphere: {
     model: 'hufnagel-valley',

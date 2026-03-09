@@ -465,11 +465,26 @@
           <section class="panel-section" data-section="linkbudget" hidden>
             <div class="section-header">
               <h2>📉 Link Budget</h2>
-              <p class="section-desc">Configure atmospheric, pointing, scintillation, and fixed optical losses for the downlink</p>
+              <p class="section-desc">Configure atmospheric, pointing, scintillation, and fixed optical losses for the satellite–ground link</p>
             </div>
 
             <div class="info-message">
               <strong>Note:</strong> These parameters extend the geometric loss with realistic channel impairments. Changes are reflected in real-time metrics and QKD calculations.
+            </div>
+
+            <!-- Link direction -->
+            <h3>Link Direction</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="linkDirection">Direction</label>
+                  <button type="button" class="info-button" aria-label="Link direction info" data-info="Downlink: satellite→ground (plane wave scintillation). Uplink: ground→satellite (spherical wave scintillation). Aperture roles swap accordingly.">!</button>
+                </div>
+                <select id="linkDirection">
+                  <option value="downlink" selected>Downlink (satellite → ground)</option>
+                  <option value="uplink">Uplink (ground → satellite)</option>
+                </select>
+              </div>
             </div>
 
             <!-- Atmospheric losses -->
@@ -573,6 +588,40 @@
                 </div>
                 <input id="bgDeltaLambda" type="number" min="0.01" max="50" step="0.01" value="1.0" />
                 <input id="bgDeltaLambdaSlider" type="range" min="0.01" max="50" step="0.01" value="1.0" />
+              </div>
+            </div>
+
+            <!-- Sun exclusion / eclipse -->
+            <h3>Sun Exclusion &amp; Eclipse</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="sunExclusionDeg">Sun exclusion angle (deg)</label>
+                  <button type="button" class="info-button" aria-label="Sun exclusion info" data-info="Minimum angular separation between the satellite line-of-sight and the Sun. Samples inside this cone are flagged as sun-excluded. Set 0 to disable.">!</button>
+                </div>
+                <input id="sunExclusionDeg" type="number" min="0" max="90" step="0.5" value="0" />
+                <input id="sunExclusionDegSlider" type="range" min="0" max="90" step="0.5" value="0" />
+              </div>
+            </div>
+
+            <!-- Received power / link margin -->
+            <h3>Link Margin</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="txPowerDbm">Tx power (dBm)</label>
+                  <button type="button" class="info-button" aria-label="Tx power info" data-info="Transmitter optical power in dBm. Used together with total link loss to compute received power.">!</button>
+                </div>
+                <input id="txPowerDbm" type="number" min="-30" max="60" step="0.1" value="30" />
+                <input id="txPowerDbmSlider" type="range" min="-30" max="60" step="0.1" value="30" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="rxSensitivityDbm">Rx sensitivity (dBm)</label>
+                  <button type="button" class="info-button" aria-label="Rx sensitivity info" data-info="Receiver minimum detectable power in dBm. Link margin = received power − sensitivity. Negative margin means no link.">!</button>
+                </div>
+                <input id="rxSensitivityDbm" type="number" min="-120" max="0" step="0.1" value="-90" />
+                <input id="rxSensitivityDbmSlider" type="range" min="-120" max="0" step="0.1" value="-90" />
               </div>
             </div>
           </section>
@@ -729,6 +778,36 @@
                 </span>
                 <strong id="bgNoiseMetric">--</strong>
               </p>
+              <p>
+                <span class="metric-label">Sun-core angle
+                  <button type="button" class="info-button" aria-label="Sun angle info" data-info="Angular separation between the satellite line-of-sight and the Sun as seen from the station (degrees).">!</button>
+                </span>
+                <strong id="sunAngleMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Eclipse
+                  <button type="button" class="info-button" aria-label="Eclipse info" data-info="Whether the satellite is in Earth's cylindrical shadow (eclipsed = no direct sunlight on satellite).">!</button>
+                </span>
+                <strong id="eclipseMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Sun excluded
+                  <button type="button" class="info-button" aria-label="Sun excluded info" data-info="Whether the current sample falls inside the sun-exclusion cone (too close to the Sun for safe/useful operation).">!</button>
+                </span>
+                <strong id="sunExcludedMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Rx power
+                  <button type="button" class="info-button" aria-label="Rx power info" data-info="Received optical power at the detector in dBm (Tx power minus total link loss).">!</button>
+                </span>
+                <strong id="rxPowerMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Link margin
+                  <button type="button" class="info-button" aria-label="Link margin info" data-info="Received power minus receiver sensitivity in dB. Positive = link viable, negative = no link.">!</button>
+                </span>
+                <strong id="linkMarginMetric">--</strong>
+              </p>
             </section>
             <h4 class="metrics-title">📈 Full Pass Metrics</h4>
             <p>Select a metric to visualize evolution over the complete pass.</p>
@@ -810,7 +889,29 @@
                 </span>
                 <button type="button" class="btn-show-graph" data-graph-id="backgroundNoise">Show graph</button>
               </li>
+              <li>
+                <span>Sun-core angle (deg)
+                  <button type="button" class="info-button" aria-label="Sun angle plot info" data-info="Angular separation between satellite LOS and Sun direction vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="sunAngle">Show graph</button>
+              </li>
+              <li>
+                <span>Received power (dBm)
+                  <button type="button" class="info-button" aria-label="Rx power plot info" data-info="Received optical power (Tx power − total loss) vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="rxPower">Show graph</button>
+              </li>
+              <li>
+                <span>Link margin (dB)
+                  <button type="button" class="info-button" aria-label="Link margin plot info" data-info="Received power minus receiver sensitivity vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="linkMargin">Show graph</button>
+              </li>
             </ul>
+
+            <h4 class="metrics-title">🔬 Parametric Link Margin Study</h4>
+            <p>Sweep ground-level Cn₀² for multiple elevation angles. Uses Hufnagel-Valley 5/7 model.</p>
+            <button type="button" id="btnLinkMarginStudy" class="btn-action btn-glow">Run FSO Link Margin Study</button>
 
             <h4 class="metrics-title">🛰️ Pass Time over OGS</h4>
             <p>Total time the satellite has direct line-of-sight to the selected OGS within the chosen maximum zenith angle.</p>
@@ -1485,6 +1586,7 @@
       <label>Latitude (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" placeholder="Enter or pick from map" required /></label>
       <label>Longitude (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" placeholder="Enter or pick from map" required /></label>
       <label>Aperture (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+      <label>Altitude (m MSL)<input id="stationAltitude" type="number" min="0" max="9000" step="1" value="0" /></label>
       <div class="station-picker-actions">
         <button id="stationPickOnMap" type="button">Pick on map</button>
         <p id="stationPickHint" class="station-pick-hint" hidden>Click the map to set the location.</p>
@@ -1512,7 +1614,19 @@
       <canvas id="modalChartCanvas"></canvas>
     </div>
     <p class="graph-hint">Scroll to zoom · Click + drag to pan · Double-click to reset</p>
-  </dialog> 
+  </dialog>
+
+  <dialog id="linkMarginDialog" class="graph-dialog lm-study-dialog" aria-labelledby="linkMarginTitle">
+    <div class="graph-dialog-header">
+      <h3 id="linkMarginTitle">FSO Link Margin Study</h3>
+      <div class="graph-dialog-actions">
+        <button id="resetLmZoom" type="button" class="btn-action btn-sm" title="Reset zoom">⟳ Reset Zoom</button>
+        <button id="closeLinkMarginDialog" type="button" class="btn-action btn-sm btn-close-modal" title="Close">✕</button>
+      </div>
+    </div>
+    <div id="linkMarginGrid" class="lm-chart-grid"></div>
+    <p class="graph-hint">Scroll to zoom · Click + drag to pan · Click legend to toggle elevation</p>
+  </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>

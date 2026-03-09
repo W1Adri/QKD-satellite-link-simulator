@@ -50,13 +50,28 @@ class OGSStore:
         self._write(data)
         return payload
 
+    def is_builtin(self, station_id: str) -> bool:
+        data = self._read()
+        for rec in data:
+            if rec.get("id") == station_id:
+                return rec.get("builtin", False)
+        return False
+
     def delete_all(self) -> None:
         self._write([])
 
+    def delete_user_stations(self) -> None:
+        """Delete only user-created stations, keeping built-in ones."""
+        data = self._read()
+        self._write([r for r in data if r.get("builtin", False)])
+
     def delete(self, station_id: str) -> bool:
         data = self._read()
-        filtered = [r for r in data if r.get("id") != station_id]
-        if len(filtered) == len(data):
+        rec = next((r for r in data if r.get("id") == station_id), None)
+        if rec is None:
             return False
+        if rec.get("builtin", False):
+            return False
+        filtered = [r for r in data if r.get("id") != station_id]
         self._write(filtered)
         return True

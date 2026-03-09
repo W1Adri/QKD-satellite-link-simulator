@@ -176,7 +176,7 @@ function propagateOrbit(settings, options = {}) {
   const epoch = settings.epoch ? new Date(settings.epoch) : new Date();
   const gmst0 = gmstFromDate(epoch);
 
-  const j2 = orbital.j2 !== false;
+  const j2 = orbital.j2Enabled !== false;
   let dotRaan = 0, dotArg = 0;
   if (j2) {
     const rates = j2SecularRates(a, e, inc);
@@ -234,7 +234,8 @@ function enuMatrix(lat, lon) {
 }
 
 function losElevation(station, rEcef) {
-  const sE = ecefFromLatLon(station.lat, station.lon);
+  const altKm = (station.altitude ?? 0) / 1000;
+  const sE = ecefFromLatLon(station.lat, station.lon, EARTH_RADIUS_KM + altKm);
   const rel = [rEcef[0]-sE[0], rEcef[1]-sE[1], rEcef[2]-sE[2]];
   const M = enuMatrix(station.lat, station.lon);
   const enu = M.map(row => row[0]*rel[0]+row[1]*rel[1]+row[2]*rel[2]);
@@ -245,7 +246,8 @@ function losElevation(station, rEcef) {
 }
 
 function dopplerFactor(station, rEcef, vEcef, wavNm) {
-  const sE = ecefFromLatLon(station.lat, station.lon);
+  const altKm = (station.altitude ?? 0) / 1000;
+  const sE = ecefFromLatLon(station.lat, station.lon, EARTH_RADIUS_KM + altKm);
   const rel = [rEcef[0]-sE[0], rEcef[1]-sE[1], rEcef[2]-sE[2]];
   const d = Math.sqrt(rel[0]**2+rel[1]**2+rel[2]**2);
   const u = rel.map(c => c/d);
@@ -302,21 +304,32 @@ function pointingLossDb(sigmaUrad, satAp, wavNm) {
   return Math.max(-10 * Math.log10(Math.max(lossLin, 1e-30)), 0);
 }
 
-function scintillationLossDb(wavNm, zenDeg, distKm, cn2Layers, p0) {
+function scintillationLossDb(wavNm, zenDeg, distKm, cn2Layers, p0, linkDirection, satAltKm, hGs) {
   // cn2Layers: [{h, cn2, dh}]
   if (!cn2Layers || !cn2Layers.length) return 0;
   const lam = wavNm * 1e-9;
   const k = 2 * Math.PI / lam;
-  const L = distKm * 1000;
   const zenRad = zenDeg * DEG2RAD;
   const secZ = 1 / Math.max(Math.cos(zenRad), 1e-6);
+  const isUplink = (linkDirection || '').toLowerCase() === 'uplink';
+  const h_gs = hGs ?? 0;  // ground station altitude (m)
+  const H_sat = (satAltKm || 550) * 1000;  // satellite altitude (m)
   let integral = 0;
   for (const layer of cn2Layers) {
-    const z = layer.h * secZ;
-    const frac = (z > 0 && L > 0) ? z / L : 0;
-    integral += layer.cn2 * (frac ** (5 / 6)) * ((1 - frac) ** (5 / 6)) * layer.dh;
+    const h = layer.h;  // altitude in metres
+    if (isUplink) {
+      // Spherical wave kernel: [(h-h_gs)(H_sat-h)/(H_sat-h_gs)]^(5/6)
+      const num = (h - h_gs) * (H_sat - h);
+      const den = H_sat - h_gs;
+      const arg = (num > 0 && den > 0) ? num / den : 0;
+      integral += layer.cn2 * Math.pow(arg, 5 / 6) * layer.dh;
+    } else {
+      // Plane wave kernel: (h - h_gs)^(5/6)
+      const arg = Math.max(h - h_gs, 0);
+      integral += layer.cn2 * Math.pow(arg, 5 / 6) * layer.dh;
+    }
   }
-  const rytov = 2.25 * (k ** (7 / 6)) * (L ** (11 / 6)) * secZ * integral;
+  const rytov = 2.25 * (k ** (7 / 6)) * (secZ ** (11 / 6)) * integral;
   if (rytov <= 0) return 0;
   const sigmaI2 = Math.exp(rytov) - 1;
   const sigmaI = Math.sqrt(Math.max(sigmaI2, 1e-30));
@@ -346,6 +359,10 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
     // Link budget component arrays
     geoLossDb:[], atmLossDb:[], pointingLossDb:[], scintLossDb:[],
     fixedLossDb:[], totalLossDb:[], couplingTotal:[], backgroundCps:[],
+    // Sun / eclipse arrays (computed server-side; placeholders here)
+    sunCoreAngleDeg:[], eclipsed:[], sunExcluded:[],
+    // Received power / link margin
+    rxPowerDbm:[], linkMarginDb:[], linkEstablished:[],
   };
   if (!station || !dataPoints?.length) return out;
   const satAp = optical?.satAperture ?? 0.6;
@@ -360,6 +377,8 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
 
   // Link budget config from state
   const lb = state?.linkBudget ?? {};
+  const linkDir = lb.linkDirection ?? 'downlink';
+  const isUplink = linkDir.toLowerCase() === 'uplink';
   const lbAod = lb.atmZenithAod ?? 0;
   const lbAbs = lb.atmZenithAbs ?? 0;
   const lbPointUrad = lb.pointingErrorUrad ?? 0;
@@ -370,6 +389,12 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
   const lbBgHrad = lb.bgRadiance ?? 0;
   const lbBgFov = lb.bgFovMrad ?? 0;
   const lbBgDl = lb.bgDeltaLambda ?? 0;
+
+  // Aperture roles depend on link direction
+  // Uplink: transmitter = ground, receiver = satellite
+  // Downlink: transmitter = satellite, receiver = ground
+  const txAp = isUplink ? gndAp : satAp;
+  const rxAp = isUplink ? satAp : gndAp;
 
   // Build Cn2 layers from atmosphere data if available
   let cn2Layers = null;
@@ -389,12 +414,17 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
 
   for (const pt of dataPoints) {
     const los = losElevation(station, pt.rEcef);
-    const gl  = geometricLoss(los.distanceKm, satAp, gndAp, wav);
+    const gl  = geometricLoss(los.distanceKm, txAp, rxAp, wav);
     const dop = dopplerFactor(station, pt.rEcef, pt.vEcef, wav);
     out.distanceKm.push(los.distanceKm);
     out.elevationDeg.push(los.elevationDeg);
     out.doppler.push(dop.factor);
     out.azimuthDeg.push(los.azimuthDeg);
+
+    // Satellite altitude from ECEF position (km)
+    const rEcef = pt.rEcef;
+    const rMag = Math.sqrt(rEcef[0] ** 2 + rEcef[1] ** 2 + rEcef[2] ** 2);
+    const satAltKm = rMag - 6371;  // approximate Earth radius in km
 
     // Geometric loss (dB)
     const gLoss = gl.lossDb;
@@ -404,15 +434,15 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
     const aLoss = atmLossDb(lbAod, lbAbs, los.elevationDeg);
     out.atmLossDb.push(aLoss);
 
-    // Pointing loss (dB)
-    const pLoss = pointingLossDb(lbPointUrad, satAp, wav);
+    // Pointing loss (dB) — uses transmitter aperture
+    const pLoss = pointingLossDb(lbPointUrad, txAp, wav);
     out.pointingLossDb.push(pLoss);
 
     // Scintillation loss (dB)
     let sLoss = 0;
     if (lbScintOn && cn2Layers && los.elevationDeg > 0) {
       const zenDeg = 90 - los.elevationDeg;
-      sLoss = scintillationLossDb(wav, zenDeg, los.distanceKm, cn2Layers, lbScintP0);
+      sLoss = scintillationLossDb(wav, zenDeg, los.distanceKm, cn2Layers, lbScintP0, linkDir, satAltKm, station.altitude ?? 0);
     }
     out.scintLossDb.push(sLoss);
 
@@ -430,9 +460,24 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
     // Background noise (cps)
     let bgCps = 0;
     if (lbBgOn && los.elevationDeg > 0) {
-      bgCps = backgroundNoiseCps(lbBgHrad, lbBgFov, lbBgDl, gndAp, wav);
+      bgCps = backgroundNoiseCps(lbBgHrad, lbBgFov, lbBgDl, rxAp, wav);
     }
     out.backgroundCps.push(bgCps);
+
+    // Sun/eclipse: needs astronomy-engine (only available server-side)
+    // Client pushes placeholders; real values come from /api/solve
+    out.sunCoreAngleDeg.push(180);
+    out.eclipsed.push(false);
+    out.sunExcluded.push(false);
+
+    // Link margin (client-side computation)
+    const txPow = lb.txPowerDbm ?? 30;
+    const rxSens = lb.rxSensitivityDbm ?? -90;
+    const rxPow = txPow - tLoss;
+    const margin = rxPow - rxSens;
+    out.rxPowerDbm.push(rxPow);
+    out.linkMarginDb.push(margin);
+    out.linkEstablished.push(margin >= 0 && los.elevationDeg > 0);
 
     // Atmosphere zenith scaling
     if (los.elevationDeg > 0) {
@@ -453,7 +498,10 @@ function computeStationMetrics(dataPoints, station, optical, state, atmosphereDa
   return out;
 }
 
-function stationEcef(station) { return ecefFromLatLon(station.lat, station.lon); }
+function stationEcef(station) {
+  const altKm = (station.altitude ?? 0) / 1000;
+  return ecefFromLatLon(station.lat, station.lon, EARTH_RADIUS_KM + altKm);
+}
 
 function ecefToEci(r, gmst) {
   const c = Math.cos(gmst), s = Math.sin(gmst);
@@ -464,9 +512,64 @@ function latLonToEci(lat, lon, alt, gmst) {
   return ecefToEci(ecefFromLatLon(lat, lon, EARTH_RADIUS_KM+(alt||0)), gmst);
 }
 
+/**
+ * Propagate the satellite orbit at arbitrary time offsets (used by helio mode).
+ * Returns { dataPoints, groundTrack } with positions at each given offset.
+ */
+function propagateOrbitAtTimes(settings, tOffsets) {
+  const { orbital, resonance } = settings;
+  const inc = (orbital.inclination ?? 53) * DEG2RAD;
+  const raan0 = (orbital.raan ?? 0) * DEG2RAD;
+  const arg0  = (orbital.argPerigee ?? 0) * DEG2RAD;
+  const M0    = (orbital.meanAnomaly ?? 0) * DEG2RAD;
+  const e     = orbital.eccentricity ?? 0.001;
+
+  let a = clamp(orbital.semiMajor ?? 6771, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+
+  // Resonance adjustment (same logic as propagateOrbit)
+  if (resonance?.enabled) {
+    const sK = Math.max(1, resonance.orbits || 1);
+    const sJ = Math.max(1, resonance.rotations || 1);
+    const tp = (sJ / sK) * SIDEREAL_DAY;
+    const aRes = Math.cbrt(MU_EARTH * (tp / TWO_PI) ** 2);
+    if (aRes >= MIN_SEMI_MAJOR && aRes <= MAX_SEMI_MAJOR) a = aRes;
+  }
+
+  const n = Math.sqrt(MU_EARTH / (a * a * a));
+  const epoch = settings.epoch ? new Date(settings.epoch) : new Date();
+  const gmst0 = gmstFromDate(epoch);
+
+  const j2 = orbital.j2Enabled !== false;
+  let dotRaan = 0, dotArg = 0;
+  if (j2) {
+    const rates = j2SecularRates(a, e, inc);
+    dotRaan = rates.dotRaan;
+    dotArg  = rates.dotArgPerigee;
+  }
+
+  const dataPoints = [], groundTrack = [];
+  for (let si = 0; si < tOffsets.length; si++) {
+    const t = tOffsets[si];
+    const raanT = raan0 + dotRaan * t;
+    const argT  = arg0  + dotArg  * t;
+    const M = (M0 + n * t) % TWO_PI;
+    const { r: rEci, v: vEci } = orbitalPosVel(a, e, inc, raanT, argT, M);
+    const gmst = (gmst0 + EARTH_ROT_RATE * t) % TWO_PI;
+    const ecef = rotateToEcef(rEci, vEci, gmst);
+    const geo = ecefToLatLon(ecef.r);
+    dataPoints.push({
+      t, rEci, vEci, rEcef: ecef.r, vEcef: ecef.v,
+      lat: geo.lat, lon: geo.lon, alt: geo.alt, gmst,
+    });
+    groundTrack.push({ lat: geo.lat, lon: geo.lon });
+  }
+  const period = TWO_PI / n;
+  return { dataPoints, groundTrack, orbitPeriod: period };
+}
+
 export const orbit = {
   constants: orbitConstants,
-  propagateOrbit, computeStationMetrics,
+  propagateOrbit, propagateOrbitAtTimes, computeStationMetrics,
   stationEcef, latLonToEci, gmstFromDate,
 };
 

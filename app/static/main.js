@@ -257,6 +257,7 @@ async function saveStationFromDialog() {
   const lat = Number(elements.stationLat?.value);
   const lon = Number(elements.stationLon?.value);
   const aperture = Number(elements.stationAperture?.value ?? 1.0);
+  const altitude = Number(elements.stationAltitude?.value ?? 0);
 
   if (!name) {
     elements.stationName?.focus();
@@ -274,7 +275,7 @@ async function saveStationFromDialog() {
   }
 
   const id = `${name.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
-  const station = { id, name, lat, lon: normalizedLon, aperture };
+  const station = { id, name, lat, lon: normalizedLon, altitude, aperture, builtin: false };
   upsertStation(station);
   persistStation(station);
   setStationPickMode(false);
@@ -363,7 +364,7 @@ function cacheElements() {
     'satAperture', 'satApertureSlider', 'groundAperture', 'groundApertureSlider', 'wavelength',
     'wavelengthSlider', 'samplesPerOrbit', 'samplesPerOrbitSlider', 'timeSlider', 'btnPlay', 'btnPause',
     'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnPanelToggle',
-  'btnMapStyle', 'panelResizer', 'stationSelect', 'btnAddStation', 'btnDeleteStation', 'btnFocusStation', 'timeLabel', 'totalDurationLabel', 'btnMenuToggle',
+  'btnMapStyle', 'panelResizer', 'stationSelect', 'btnAddStation', 'btnDeleteStation', 'btnFocusStation', 'stationAltitude', 'timeLabel', 'totalDurationLabel', 'btnMenuToggle',
     'elevationLabel', 'lossLabel', 'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric',
     'dopplerMetric', 'threeContainer', 'mapContainer', 'orbitMessages',
     'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave', 'stationCancel',
@@ -381,6 +382,7 @@ function cacheElements() {
     'darkCountRate', 'darkCountRateSlider', 'opticalFilterBandwidth', 'opticalFilterBandwidthSlider',
     'btnCalculateQKD', 'qkdStatus', 'qberMetric', 'rawKeyRateMetric', 'secureKeyRateMetric', 'channelTransmittanceMetric',
     // Link Budget elements
+    'linkDirection',
     'atmZenithAod', 'atmZenithAodSlider', 'atmZenithAbs', 'atmZenithAbsSlider',
     'pointingErrorUrad', 'pointingErrorUradSlider',
     'fixedOpticsLoss', 'fixedOpticsLossSlider',
@@ -390,6 +392,11 @@ function cacheElements() {
     // Link Budget analytics metrics
     'geoLossMetric', 'atmLossMetric', 'pointingLossMetric', 'scintLossMetric',
     'fixedLossMetric', 'totalLossMetric', 'bgNoiseMetric', 'couplingMetric',
+    'sunAngleMetric', 'eclipseMetric', 'sunExcludedMetric',
+    'rxPowerMetric', 'linkMarginMetric',
+    'sunExclusionDeg', 'sunExclusionDegSlider',
+    'txPowerDbm', 'txPowerDbmSlider',
+    'rxSensitivityDbm', 'rxSensitivityDbmSlider',
     'j2Toggle',
     // SSO panel elements
     'ssoToggle', 'ssoFields', 'ssoAltitude', 'ssoAltitudeSlider', 'ssoEccentricity',
@@ -406,6 +413,9 @@ function cacheElements() {
     // Pass time over OGS
     'passZenithThreshold', 'passZenithThresholdSlider', 'btnComputePassTime',
     'passTimeResults', 'passTimeTotalMetric', 'passTimeCountMetric', 'passTimeLongestMetric',
+    // Link Margin Study dialog
+    'btnLinkMarginStudy', 'linkMarginDialog', 'linkMarginGrid', 'linkMarginTitle',
+    'closeLinkMarginDialog', 'resetLmZoom',
   ];
   ids.forEach((id) => {
     elements[id] = document.getElementById(id);
@@ -783,10 +793,10 @@ function renderOptimizerResults(partial = false) {
   const summaryPrefix = partial ? 'Partially Resonant: ' : 'Result: ';
 
   if (elements.optSummary) {
-    elements.optSummary.textContent = `${summaryPrefix}${results.length} match(es) for aâ‚€ = ${formatKm(
+    elements.optSummary.textContent = `${summaryPrefix}${results.length} match(es) for a\u2080 = ${formatKm(
       targetA,
       0, // Removed decimals for semiMajor in summary
-    )} km Â± ${toleranceText}, j âˆˆ [${minRotations}, ${maxRotations}], k âˆˆ [${minOrbits}, ${maxOrbits}].`;
+    )} km \u00B1 ${toleranceText}, j \u2208 [${minRotations}, ${maxRotations}], k \u2208 [${minOrbits}, ${maxOrbits}].`;
   }
 
   if (!results.length) {
@@ -799,7 +809,7 @@ function renderOptimizerResults(partial = false) {
   const table = document.createElement('table');
   table.className = 'resonance-table';
   table.innerHTML =
-    '<thead><tr><th>j</th><th>k</th><th>j/k</th><th>a (km)</th><th>Î”a (km)</th><th>Period</th><th></th></tr></thead>';
+    '<thead><tr><th>j</th><th>k</th><th>j/k</th><th>a (km)</th><th>Δa (km)</th><th>Period</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
   const maxRows = Math.min(results.length, 200);
   for (let idx = 0; idx < maxRows; idx += 1) {
@@ -814,7 +824,7 @@ function renderOptimizerResults(partial = false) {
       <td>${formatKm(hit.semiMajorKm, 0)}</td>
       <td>${deltaText}</td>
       <td>${formatDuration(hit.periodSec)}</td>
-      <td><button type="button" class="apply-btn" data-index="${idx}">âœ“</button></td>
+      <td><button type="button" class="apply-btn" data-index="${idx}">✓</button></td>
     `;
     tbody.appendChild(row);
   }
@@ -1302,6 +1312,9 @@ function bindEvents() {
     ['scintillationP0', 'scintillationP0Slider', (value) => clamp(Number(value), 0.001, 0.5), 'linkBudget.scintillationP0'],
     ['bgFovMrad', 'bgFovMradSlider', (value) => clamp(Number(value), 0.01, 10), 'linkBudget.bgFovMrad'],
     ['bgDeltaLambda', 'bgDeltaLambdaSlider', (value) => clamp(Number(value), 0.01, 50), 'linkBudget.bgDeltaLambda'],
+    ['sunExclusionDeg', 'sunExclusionDegSlider', (value) => clamp(Number(value), 0, 90), 'linkBudget.sunExclusionDeg'],
+    ['txPowerDbm', 'txPowerDbmSlider', (value) => clamp(Number(value), -30, 60), 'linkBudget.txPowerDbm'],
+    ['rxSensitivityDbm', 'rxSensitivityDbmSlider', (value) => clamp(Number(value), -120, 0), 'linkBudget.rxSensitivityDbm'],
   ];
 
   sliderPairs.forEach(([inputId, sliderId, normalize, path, spanId = null]) => {
@@ -1355,6 +1368,9 @@ function bindEvents() {
   });
 
   // ── Link Budget checkbox & input handlers ─────────────────────────────
+  elements.linkDirection?.addEventListener('change', (event) => {
+    mutate((draft) => { draft.linkBudget.linkDirection = event.target.value; });
+  });
   elements.scintillationEnabled?.addEventListener('change', (event) => {
     mutate((draft) => { draft.linkBudget.scintillationEnabled = event.target.checked; });
     if (elements.scintillationFields) {
@@ -2369,6 +2385,19 @@ function bindEvents() {
     elements.graphModal?.close();
   });
 
+  // Link Margin Study dialog handlers
+  elements.btnLinkMarginStudy?.addEventListener('click', showLinkMarginStudy);
+  elements.closeLinkMarginDialog?.addEventListener('click', () => {
+    elements.linkMarginDialog?.close();
+  });
+  elements.resetLmZoom?.addEventListener('click', () => {
+    if (window._lmStudyCharts) {
+      window._lmStudyCharts.forEach(c => {
+        if (typeof c.resetZoom === 'function') c.resetZoom();
+      });
+    }
+  });
+
   // Reset zoom button
   elements.resetZoomBtn?.addEventListener('click', () => {
     if (modalChartInstance && typeof modalChartInstance.resetZoom === 'function') {
@@ -2411,6 +2440,10 @@ function bindEvents() {
   elements.btnDeleteStation?.addEventListener('click', async () => {
     const station = getSelectedStation();
     if (!station) return;
+    if (station.builtin) {
+      window.alert('Built-in stations cannot be deleted.');
+      return;
+    }
     const confirmed = window.confirm(`Remove the station "${station.name}"?`);
     if (!confirmed) return;
     await deleteStationRemote(station.id);
@@ -2422,6 +2455,7 @@ function bindEvents() {
       if (elements.stationName) elements.stationName.value = '';
       if (elements.stationLat) elements.stationLat.value = '';
       if (elements.stationLon) elements.stationLon.value = '';
+      if (elements.stationAltitude) elements.stationAltitude.value = '0';
       resetStationDialogPosition();
       updateStationPickHint();
       endStationDialogDrag();
@@ -2477,9 +2511,12 @@ function refreshStationSelect() {
   }
   const hasStations = list.length > 0;
   const hasSelection = hasStations && Boolean(selectedId);
+  const selectedStation = list.find((s) => s.id === selectedId);
+  const isBuiltin = selectedStation?.builtin ?? false;
   elements.stationSelect.disabled = !hasStations;
   if (elements.btnDeleteStation) {
-    elements.btnDeleteStation.disabled = !hasSelection;
+    elements.btnDeleteStation.disabled = !hasSelection || isBuiltin;
+    elements.btnDeleteStation.title = isBuiltin ? 'Built-in stations cannot be deleted' : 'Remove the selected station';
   }
   if (elements.btnFocusStation) {
     elements.btnFocusStation.disabled = !hasSelection;
@@ -2491,6 +2528,8 @@ function orbitSignature(snapshot) {
     orbital: snapshot.orbital,
     resonance: snapshot.resonance,
     samplesPerOrbit: snapshot.samplesPerOrbit,
+    sceneMode: snapshot.sceneMode,
+    helio: snapshot.helio,
   });
 }
 
@@ -2599,10 +2638,9 @@ function forceConstellationRefresh() {
     clearAllConstellations();
     return;
   }
-  if (!Array.isArray(state.computed?.dataPoints) || !state.computed.dataPoints.length) {
-    return;
-  }
-  const index = clamp(state.time.index, 0, state.computed.dataPoints.length - 1);
+  const timeline = state.time.timeline ?? [];
+  if (!timeline.length) return;
+  const index = clamp(state.time.index, 0, timeline.length - 1);
   if (!Object.keys(state.computed?.constellationPositions ?? {}).length) {
     refreshConstellationPositions();
   }
@@ -2877,7 +2915,12 @@ function updateHelioSampleHint() {
 }
 
 /** Fetch the heliocentric scene timeline from the backend and apply it. */
+let _helioRecomputeInProgress = false;
+let _helioRecomputePromise = null;
 async function recomputeHelioTimeline() {
+  if (_helioRecomputeInProgress) return _helioRecomputePromise;
+  _helioRecomputeInProgress = true;
+  _helioRecomputePromise = (async () => {
   try {
     const data = await fetchSceneTimeline(
       state.epoch,
@@ -2890,10 +2933,56 @@ async function recomputeHelioTimeline() {
     // Build a compatible timeline array (seconds offsets)
     const offsets = data.t_offsets_s;
     const totalSeconds = offsets.length > 0 ? offsets[offsets.length - 1] : 0;
-    setTimeline({ timeline: offsets, totalSeconds });
 
-    // Build Earth orbit path visualisation
+    // ── 1. Dense orbit path for the 3D visual ───────────────────────────
+    // Helio timeline offsets are typically sparse (e.g. 1 h apart).  For a
+    // ~90 min LEO orbit that means < 2 samples per revolution, producing a
+    // criss-crossing zigzag.  Generate ~180 pts / orbit so the orbit ring
+    // is smooth.
+    const probeResult = orbit.propagateOrbitAtTimes(state, [0, 1]);
+    const period = probeResult.orbitPeriod;               // seconds
+    const pathStep = Math.max(1, period / 180);
+    const totalInterval = totalSeconds || 1;
+    const denseCount = Math.min(8000, Math.ceil(totalInterval / pathStep) + 1);
+    const denseOffsets = [];
+    for (let i = 0; i < denseCount; i++) denseOffsets.push(i * pathStep);
+    const denseResult = orbit.propagateOrbitAtTimes(state, denseOffsets);
+
+    // ── 2. Helio-offset propagation for satellite tracking / metrics ────
+    const helioResult = orbit.propagateOrbitAtTimes(state, offsets);
+
+    const station = getSelectedStation();
+    const metrics = orbit.computeStationMetrics(
+      helioResult.dataPoints, station, state.optical, state, null,
+    );
+
+    // ── 3. Compute TLE constellation positions for helio timeline ─────
+    let constellationPositions = state.computed?.constellationPositions ?? {};
+    if (hasActiveConstellations() && window.satellite) {
+      const datasets = getActiveConstellationDatasets();
+      if (datasets.length) {
+        constellationPositions = computeConstellationPositions(
+          offsets, state.epoch, datasets,
+        );
+      }
+    }
+
+    // ── 4. Apply visuals BEFORE state mutations ─────────────────────────
+    // setTimeline / setComputed trigger synchronous emit() → onStateChange
+    // which may call scheduleVisualUpdate.  Updating the orbit path first
+    // ensures the displayed line is up-to-date before any re-render.
     updateEarthOrbitPath(data.earth_pos_eci_au);
+    updateOrbitPath(denseResult.dataPoints, { smooth: false });
+    updateGroundTrackSurface(helioResult.groundTrack);
+    setTimeline({ timeline: offsets, totalSeconds });
+    setComputed({
+      ...state.computed,
+      dataPoints: helioResult.dataPoints,
+      groundTrack: helioResult.groundTrack,
+      metrics,
+      constellationPositions,
+    });
+    lastConstellationIndex = -1;
 
     // Also fetch solar data for lighting
     clearSolarData();
@@ -2901,7 +2990,11 @@ async function recomputeHelioTimeline() {
     if (solarData) scheduleVisualUpdate();
   } catch (err) {
     console.error('[helio] Failed to fetch scene timeline:', err);
+  } finally {
+    _helioRecomputeInProgress = false;
   }
+  })();
+  return _helioRecomputePromise;
 }
 
 /** Called when switching to/from heliocentric mode. */
@@ -2919,6 +3012,7 @@ function applySceneModeChange(mode) {
 
   if (isHelio) {
     updateHelioSampleHint();
+    lastOrbitSignature = orbitSignature(state);
     recomputeHelioTimeline();
   } else {
     // Reset earth system position to origin
@@ -2932,6 +3026,7 @@ function applySceneModeChange(mode) {
 async function recomputeOrbit(force = false) {
   // In helio mode, skip orbit propagation and use scene timeline instead
   if (state.sceneMode === 'helio') {
+    lastOrbitSignature = orbitSignature(state);
     await recomputeHelioTimeline();
     return;
   }
@@ -3092,25 +3187,30 @@ function scheduleVisualUpdate() {
       }
     }
     updateMetricsUI(index);
-    return;  // helio mode doesn't render orbit/satellite/link per-step
+    // Fall through to render satellite / 2D map updates
   }
 
-  // Single orbit
+  // Single orbit (or helio mode with propagated satellite data)
+  const isHelio = state.sceneMode === 'helio';
   if (dataPoints && dataPoints.length > 0) {
     const current = dataPoints[index];
-    setEarthRotationFromTime(current.gmst ?? 0);
 
-    // ── Solar lighting update (from backend data) ────────────────────────
-    const solarData = getSolarData();
-    if (solarData) {
-      updateSolarFromBackend(index, solarData);
-    } else {
-      // Fallback: approximate sun direction from epoch + current offset
-      const epochMs = new Date(state.epoch).getTime();
-      const t = state.time.timeline?.[index] ?? 0;
-      const nowDate = new Date(epochMs + t * 1000);
-      const [ex, ey, ez] = approxSunDirEci(nowDate);
-      updateSolarLighting(ex, ez, -ey);
+    // In helio mode, Earth rotation & solar lighting are already set above
+    if (!isHelio) {
+      setEarthRotationFromTime(current.gmst ?? 0);
+
+      // ── Solar lighting update (from backend data) ──────────────────────
+      const solarData = getSolarData();
+      if (solarData) {
+        updateSolarFromBackend(index, solarData);
+      } else {
+        // Fallback: approximate sun direction from epoch + current offset
+        const epochMs = new Date(state.epoch).getTime();
+        const t = state.time.timeline?.[index] ?? 0;
+        const nowDate = new Date(epochMs + t * 1000);
+        const [ex, ey, ez] = approxSunDirEci(nowDate);
+        updateSolarLighting(ex, ez, -ey);
+      }
     }
 
     updateGroundTrack(groundTrack);
@@ -3273,6 +3373,11 @@ function updateMetricsUI(index) {
     if (elements.totalLossMetric) elements.totalLossMetric.textContent = '--';
     if (elements.bgNoiseMetric) elements.bgNoiseMetric.textContent = '--';
     if (elements.couplingMetric) elements.couplingMetric.textContent = '--';
+    if (elements.sunAngleMetric) elements.sunAngleMetric.textContent = '--';
+    if (elements.eclipseMetric) elements.eclipseMetric.textContent = '--';
+    if (elements.sunExcludedMetric) elements.sunExcludedMetric.textContent = '--';
+    if (elements.rxPowerMetric) elements.rxPowerMetric.textContent = '--';
+    if (elements.linkMarginMetric) elements.linkMarginMetric.textContent = '--';
     if (elements.timeLabel) elements.timeLabel.textContent = '0 s';
     if (elements.elevationLabel) elements.elevationLabel.textContent = '--';
     if (elements.lossLabel) elements.lossLabel.textContent = '--';
@@ -3331,6 +3436,18 @@ function updateMetricsUI(index) {
   if (elements.bgNoiseMetric) elements.bgNoiseMetric.textContent = (bgNoise != null && Number.isFinite(bgNoise)) ? bgNoise.toFixed(0) + ' cps' : '--';
   if (elements.couplingMetric) elements.couplingMetric.textContent = (coupling != null && Number.isFinite(coupling)) ? (coupling * 100).toFixed(4) + ' %' : '--';
 
+  // Sun / eclipse / link margin metrics
+  const sunAngle = valueFromSeries(metrics.sunCoreAngleDeg, index, null);
+  const eclipsed = metrics.eclipsed?.[index];
+  const sunExcl = metrics.sunExcluded?.[index];
+  const rxPwr = valueFromSeries(metrics.rxPowerDbm, index, null);
+  const lnkMargin = valueFromSeries(metrics.linkMarginDb, index, null);
+  if (elements.sunAngleMetric) elements.sunAngleMetric.textContent = (sunAngle != null && Number.isFinite(sunAngle)) ? sunAngle.toFixed(1) + '°' : '--';
+  if (elements.eclipseMetric) elements.eclipseMetric.textContent = eclipsed != null ? (eclipsed ? 'Yes' : 'No') : '--';
+  if (elements.sunExcludedMetric) elements.sunExcludedMetric.textContent = sunExcl != null ? (sunExcl ? '⚠ Yes' : 'No') : '--';
+  if (elements.rxPowerMetric) elements.rxPowerMetric.textContent = (rxPwr != null && Number.isFinite(rxPwr)) ? rxPwr.toFixed(1) + ' dBm' : '--';
+  if (elements.linkMarginMetric) elements.linkMarginMetric.textContent = (lnkMargin != null && Number.isFinite(lnkMargin)) ? lnkMargin.toFixed(1) + ' dB' : '--';
+
   if (elements.timeLabel) {
     const t = state.time.timeline[index] ?? 0;
     if (state.sceneMode === 'helio' && t >= 86400) {
@@ -3383,7 +3500,7 @@ function createLineChart(canvas, { color }) {
           backgroundColor: `${color}33`,
           tension: 0.28,
           pointRadius: 0,
-          borderWidth: 2,
+          borderWidth: 2.5,
           fill: false,
         },
       ],
@@ -3455,7 +3572,7 @@ function createLineChart(canvas, { color }) {
 
 function initializeCharts() {
   modalChartInstance = createLineChart(elements.modalChartCanvas, {
-    color: '#7c3aed',
+    color: '#00f0ff',
   });
   updateChartTheme();
 }
@@ -3551,46 +3668,46 @@ function showModalGraph(graphId) {
       data: metrics.lossDb ?? [],
       title: 'Loss vs Time',
       yLabel: 'Geometric loss (dB)',
-      color: '#7c3aed',
+      color: '#00f0ff',
     },
     elevation: {
       data: metrics.elevationDeg ?? [],
       title: 'Elevation vs Time',
       yLabel: 'Station elevation (Â°)',
-      color: '#0ea5e9',
+      color: '#38bdf8',
     },
     distance: {
       data: metrics.distanceKm ?? [],
       title: 'Range vs Time',
       yLabel: 'Satellite-ground range (km)',
-      color: '#22c55e',
+      color: '#4ade80',
     },
     r0: {
       data: metrics.r0_array ?? [],
       title: 'Fried parameter (r0)',
       yLabel: 'r0 (m)',
-      color: '#f97316',
+      color: '#fbbf24',
       datasetLabel: 'r0 (m)',
     },
     fG: {
       data: metrics.fG_array ?? [],
       title: 'Greenwood frequency (fG)',
       yLabel: 'fG (Hz)',
-      color: '#06b6d4',
+      color: '#22d3ee',
       datasetLabel: 'fG (Hz)',
     },
     theta0: {
       data: metrics.theta0_array ?? [],
       title: 'Isoplanatic angle (theta0)',
       yLabel: 'theta0 (arcsec)',
-      color: '#10b981',
+      color: '#34d399',
       datasetLabel: 'theta0 (arcsec)',
     },
     wind: {
       data: metrics.wind_array ?? [],
       title: 'RMS wind speed',
       yLabel: 'Wind (m/s)',
-      color: '#f59e0b',
+      color: '#fbbf24',
       datasetLabel: 'Wind (m/s)',
     },
     // Link Budget graphs
@@ -3598,36 +3715,57 @@ function showModalGraph(graphId) {
       data: metrics.totalLossDb ?? [],
       title: 'Total Link Loss vs Time',
       yLabel: 'Total loss (dB)',
-      color: '#ef4444',
+      color: '#ff4444',
       datasetLabel: 'Total loss (dB)',
     },
     atmLoss: {
       data: metrics.atmLossDb ?? [],
       title: 'Atmospheric Loss vs Time',
       yLabel: 'Atm loss (dB)',
-      color: '#8b5cf6',
+      color: '#a78bfa',
       datasetLabel: 'Atm loss (dB)',
     },
     pointingLoss: {
       data: metrics.pointingLossDb ?? [],
       title: 'Pointing Loss vs Time',
       yLabel: 'Pointing loss (dB)',
-      color: '#ec4899',
+      color: '#f472b6',
       datasetLabel: 'Pointing loss (dB)',
     },
     scintLoss: {
       data: metrics.scintLossDb ?? [],
       title: 'Scintillation Loss vs Time',
       yLabel: 'Scintillation loss (dB)',
-      color: '#14b8a6',
+      color: '#2dd4bf',
       datasetLabel: 'Scintillation loss (dB)',
     },
     backgroundNoise: {
       data: metrics.backgroundCps ?? [],
       title: 'Background Noise vs Time',
       yLabel: 'Background (cps)',
-      color: '#f97316',
+      color: '#fb923c',
       datasetLabel: 'Background noise (cps)',
+    },
+    sunAngle: {
+      data: metrics.sunCoreAngleDeg ?? [],
+      title: 'Sun-Core Angle vs Time',
+      yLabel: 'Sun-core angle (Â°)',
+      color: '#ffd500',
+      datasetLabel: 'Sun-core angle (Â°)',
+    },
+    rxPower: {
+      data: metrics.rxPowerDbm ?? [],
+      title: 'Received Power vs Time',
+      yLabel: 'Rx power (dBm)',
+      color: '#00ff88',
+      datasetLabel: 'Rx power (dBm)',
+    },
+    linkMargin: {
+      data: metrics.linkMarginDb ?? [],
+      title: 'Link Margin vs Time',
+      yLabel: 'Link margin (dB)',
+      color: '#ff2c9f',
+      datasetLabel: 'Link margin (dB)',
     },
   };
 
@@ -3669,6 +3807,270 @@ function showModalGraph(graphId) {
   }
   requestAnimationFrame(() => {
     modalChartInstance.resize();
+  });
+}
+
+// ── Parametric FSO Link Margin Study ────────────────────────────────────
+function showLinkMarginStudy() {
+  const ChartJS = window.Chart;
+  const dialog = elements.linkMarginDialog;
+  const grid = elements.linkMarginGrid;
+  if (!ChartJS || !dialog || !grid) return;
+
+  // ── Current parameters from state ─────────────────────────────────
+  const lb = state.linkBudget;
+  const opt = state.optical;
+  const sma = state.orbital.semiMajor || 6771;
+  const satAltKm = Math.max(sma - 6371, 100);
+  const station = getSelectedStation();
+  const stationAltM = station?.altitude ?? 0;
+  const linkDir = lb.linkDirection ?? 'downlink';
+  const isUplink = linkDir.toLowerCase() === 'uplink';
+  const wavNm = opt.wavelength ?? 810;
+  const satAp = opt.satAperture ?? 0.6;
+  const gndAp = opt.groundAperture ?? 1.0;
+  const txAp = isUplink ? gndAp : satAp;
+  const rxAp = isUplink ? satAp : gndAp;
+  const peUrad = lb.pointingErrorUrad ?? 0;
+  const fixedDb = lb.fixedOpticsLoss ?? 0;
+  const aodZ = lb.atmZenithAod ?? 0;
+  const absZ = lb.atmZenithAbs ?? 0;
+  const scintP0 = lb.scintillationP0 ?? 0.01;
+  const txPow = lb.txPowerDbm ?? 30;
+  const rxSens = lb.rxSensitivityDbm ?? -90;
+  const W = 21;  // HV 5/7 default wind speed (m/s)
+
+  // ── Sweep parameters ──────────────────────────────────────────────
+  const elevations = [90, 75, 60, 45, 30, 15, 5];
+  const cn0Vals = [];
+  for (let exp = -15; exp <= -12; exp += 0.2) cn0Vals.push(Math.pow(10, exp));
+  const neonColors = ['#00f0ff', '#00ff88', '#ffd500', '#ff9100', '#ff4444', '#ff2c9f', '#b24bf3'];
+
+  // ── Hufnagel-Valley 5/7 Cn² profile generator ────────────────────
+  const hvAlts = [0, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000];
+  function hvLayers(cn0sq) {
+    return hvAlts.map((h, i) => {
+      const t1 = 0.00594 * Math.pow(W / 27, 2) * Math.pow(h * 1e-5, 10) * Math.exp(-h / 1000);
+      const cn2 = t1 + 2.7e-16 * Math.exp(-h / 1500) + cn0sq * Math.exp(-h / 100);
+      const dh = (i < hvAlts.length - 1) ? hvAlts[i + 1] - h : 5000;
+      return { h, cn2, dh };
+    });
+  }
+
+  // ── Slant range ───────────────────────────────────────────────────
+  function slantKm(elevDeg) {
+    const el = elevDeg * Math.PI / 180;
+    const Re = 6371 + stationAltM / 1000;
+    const Rs = 6371 + satAltKm;
+    return Math.sqrt(Rs * Rs - Re * Re * Math.cos(el) * Math.cos(el)) - Re * Math.sin(el);
+  }
+
+  // ── Inline loss helpers (match simulation.js physics) ─────────────
+  function geoLossDb(distKm) {
+    const lam = wavNm * 1e-9, dM = distKm * 1000;
+    const div = 1.22 * lam / Math.max(txAp, 1e-3);
+    const spot = Math.max(div * dM * 0.5, 1e-6);
+    const cap = rxAp * 0.5;
+    const coup = Math.min(1, (cap / spot) ** 2);
+    return -10 * Math.log10(Math.max(coup, 1e-9));
+  }
+
+  function atmLossDb(elevDeg) {
+    if (elevDeg <= 0) return 0;
+    const zenRad = (90 - elevDeg) * Math.PI / 180;
+    const am = 1 / Math.max(Math.cos(zenRad), 1e-6);
+    return (aodZ + absZ) * am;
+  }
+
+  function ptLossDb() {
+    if (peUrad <= 0) return 0;
+    const lam = wavNm * 1e-9;
+    const div = 1.22 * lam / Math.max(txAp, 1e-6);
+    const ratio = (peUrad * 1e-6) / div;
+    return Math.max(-10 * Math.log10(Math.max(Math.exp(-2 * ratio * ratio), 1e-30)), 0);
+  }
+
+  // erfinv (Winitzki + Newton refinement)
+  function erfFn(x) {
+    const sign = x < 0 ? -1 : 1;
+    const t = 1 / (1 + 0.3275911 * Math.abs(x));
+    const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    return sign * (1 - poly * Math.exp(-x * x));
+  }
+  function erfinv(x) {
+    const a = 0.147;
+    const lnTerm = Math.log(1 - x * x);
+    const p1 = 2 / (Math.PI * a) + lnTerm / 2;
+    let y = Math.sign(x) * Math.sqrt(Math.sqrt(p1 * p1 - lnTerm / a) - p1);
+    const dErf = (2 / Math.sqrt(Math.PI)) * Math.exp(-y * y);
+    if (Math.abs(dErf) > 1e-30) y -= (erfFn(y) - x) / dErf;
+    return y;
+  }
+
+  function scintLossDb(elevDeg, layers) {
+    if (!layers || !layers.length) return 0;
+    const lam = wavNm * 1e-9;
+    const k = 2 * Math.PI / lam;
+    const zenRad = (90 - elevDeg) * Math.PI / 180;
+    const secZ = 1 / Math.max(Math.cos(zenRad), 1e-6);
+    const H_sat = satAltKm * 1000;
+    let integral = 0;
+    for (const layer of layers) {
+      const h = layer.h;
+      if (isUplink) {
+        const num = (h - stationAltM) * (H_sat - h);
+        const den = H_sat - stationAltM;
+        const arg = (num > 0 && den > 0) ? num / den : 0;
+        integral += layer.cn2 * Math.pow(arg, 5 / 6) * layer.dh;
+      } else {
+        integral += layer.cn2 * Math.pow(Math.max(h - stationAltM, 0), 5 / 6) * layer.dh;
+      }
+    }
+    const rytov = 2.25 * Math.pow(k, 7 / 6) * Math.pow(secZ, 11 / 6) * integral;
+    if (rytov <= 0) return 0;
+    const sigmaI2 = Math.exp(rytov) - 1;
+    const sigmaI = Math.sqrt(Math.max(sigmaI2, 1e-30));
+    const z2 = erfinv(2 * Math.max(Math.min(scintP0, 0.5), 1e-9) - 1);
+    const fadeDb = -10 * Math.log10(Math.exp(2 * sigmaI * z2 + sigmaI2));
+    return Math.max(fadeDb, 0);
+  }
+
+  const pLoss = ptLossDb();
+
+  // ── Compute parametric data ───────────────────────────────────────
+  const datasets = { rxPower: [], linkMargin: [], totalLoss: [] };
+
+  for (let ei = 0; ei < elevations.length; ei++) {
+    const elev = elevations[ei];
+    const distKm = slantKm(elev);
+    const gL = geoLossDb(distKm);
+    const aL = atmLossDb(elev);
+    const rxP = [], lM = [], tL = [];
+
+    for (const cn0 of cn0Vals) {
+      const layers = hvLayers(cn0);
+      const sL = scintLossDb(elev, layers);
+      const total = gL + aL + pLoss + sL + fixedDb;
+      const rxPow = txPow - total;
+      const margin = rxPow - rxSens;
+      rxP.push(rxPow);
+      lM.push(margin);
+      tL.push(total);
+    }
+
+    const base = {
+      label: elev + '\u00b0',
+      borderColor: neonColors[ei],
+      backgroundColor: neonColors[ei],
+      pointBackgroundColor: neonColors[ei],
+      borderWidth: 2,
+      borderDash: [6, 3],
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      fill: false,
+    };
+    datasets.rxPower.push({ ...base, data: rxP });
+    datasets.linkMargin.push({ ...base, data: lM });
+    datasets.totalLoss.push({ ...base, data: tL });
+  }
+
+  const xLabels = cn0Vals.map(v => v.toExponential(1));
+
+  // ── Destroy any previous study charts ─────────────────────────────
+  if (window._lmStudyCharts) {
+    window._lmStudyCharts.forEach(c => c.destroy());
+  }
+  window._lmStudyCharts = [];
+  grid.innerHTML = '';
+
+  // ── Title ─────────────────────────────────────────────────────────
+  if (elements.linkMarginTitle) {
+    elements.linkMarginTitle.textContent =
+      'FSO Link Margin \u2014 ' + (isUplink ? 'UPLINK' : 'DOWNLINK') + ' Link';
+  }
+
+  // ── Create 3 stacked charts ───────────────────────────────────────
+  const chartDefs = [
+    { key: 'rxPower',    yLabel: 'Rx Power (dBm)',     title: 'Received Power' },
+    { key: 'linkMargin', yLabel: 'Link Margin (dB)',   title: 'Link Margin' },
+    { key: 'totalLoss',  yLabel: 'Total Loss (dB)',    title: 'Total Loss' },
+  ];
+
+  for (const def of chartDefs) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'lm-chart-wrapper';
+    const canvas = document.createElement('canvas');
+    wrapper.appendChild(canvas);
+    grid.appendChild(wrapper);
+
+    const chart = new ChartJS(canvas, {
+      type: 'line',
+      data: { labels: xLabels, datasets: datasets[def.key] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          title: {
+            display: true,
+            text: def.title,
+            color: '#e8eef7',
+            font: { size: 13, weight: '600' },
+            padding: { bottom: 6 },
+          },
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              color: '#e8eef7',
+              usePointStyle: true,
+              pointStyle: 'circle',
+              padding: 12,
+              font: { size: 11 },
+            },
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            titleColor: '#e8eef7',
+            bodyColor: '#e8eef7',
+            backgroundColor: 'rgba(26, 31, 46, 0.95)',
+            borderColor: 'rgba(0, 240, 255, 0.3)',
+            borderWidth: 1,
+          },
+          zoom: {
+            pan: { enabled: true, mode: 'xy' },
+            zoom: {
+              wheel: { enabled: true, speed: 0.08 },
+              pinch: { enabled: true },
+              mode: 'xy',
+            },
+          },
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Cn\u2080\u00b2 (m\u207b\u00b2\u2033)', color: '#e8eef7' },
+            ticks: { color: '#9ba3b4', maxTicksLimit: 8, maxRotation: 45 },
+            grid: { color: 'rgba(79, 209, 255, 0.08)' },
+          },
+          y: {
+            title: { display: true, text: def.yLabel, color: '#e8eef7' },
+            ticks: { color: '#9ba3b4', maxTicksLimit: 6 },
+            grid: { color: 'rgba(79, 209, 255, 0.08)' },
+          },
+        },
+      },
+    });
+    window._lmStudyCharts.push(chart);
+  }
+
+  // ── Open dialog ───────────────────────────────────────────────────
+  if (dialog instanceof HTMLDialogElement && !dialog.open) {
+    dialog.showModal();
+  }
+  requestAnimationFrame(() => {
+    window._lmStudyCharts.forEach(c => c.resize());
   });
 }
 
@@ -3741,6 +4143,14 @@ function renderOrbitMessages() {
 }
 
 function clearSingleOrbit() {
+    updateOrbitPath([]);
+    updateGroundTrackSurface([]);
+    updateGroundTrack([]);
+    updateSatellite(null);
+    updateSatellitePosition(null);
+    updateGroundTrackVector(null);
+    updateLinkLine(null, null);
+    updateLink3D(null, null);
     mutate((draft) => {
         draft.computed.dataPoints = [];
         draft.computed.groundTrack = [];
@@ -3768,6 +4178,7 @@ function clearTleConstellations() {
 }
 
 async function plotWalkerConstellation() {
+  try {
     const T = Number(elements.walkerT?.value) || 24;
     const P = Number(elements.walkerP?.value) || 6;
     const F = Number(elements.walkerF?.value) || 1;
@@ -3791,6 +4202,7 @@ async function plotWalkerConstellation() {
     
     setConstellationStatusMessage(`Propagating ${constellationElements.length} satellites...`, 'loading');
 
+    const isHelio = state.sceneMode === 'helio';
     const satellites = [];
     for (let index = 0; index < constellationElements.length; index++) {
         const satElements = constellationElements[index];
@@ -3799,11 +4211,20 @@ async function plotWalkerConstellation() {
             orbital: satElements,
             resonance: { enabled: false },
         };
-        const orbitData = orbit.propagateOrbit(satSettings, { samplesPerOrbit: DRAFT_SAMPLES_PER_ORBIT });
+        let dataPoints;
+        if (isHelio) {
+            // In helio mode, propagate at the helio timeline offsets so
+            // per-satellite timelines align with state.time.timeline.
+            const result = orbit.propagateOrbitAtTimes(satSettings, timeline);
+            dataPoints = result.dataPoints;
+        } else {
+            const orbitData = orbit.propagateOrbit(satSettings, { samplesPerOrbit: DRAFT_SAMPLES_PER_ORBIT });
+            dataPoints = orbitData.dataPoints;
+        }
         satellites.push({
             id: `walker-${index}`,
             name: `W-${index}`,
-            timeline: orbitData.dataPoints,
+            timeline: dataPoints,
         });
     }
     
@@ -3814,7 +4235,15 @@ async function plotWalkerConstellation() {
             satellites,
         };
     });
+    // Force an immediate visual update so the constellation is rendered
+    // without relying on the onStateChange → scheduleVisualUpdate chain
+    // (which may be short-circuited by signature checks).
+    scheduleVisualUpdate();
     setConstellationStatusMessage(`Rendered ${constellationElements.length} satellite constellation.`, 'ready');
+  } catch (err) {
+    console.error('[plotWalkerConstellation] Error:', err);
+    setConstellationStatusMessage(`Error plotting constellation: ${err.message}`, 'error');
+  }
 }
 
 function playbackLoop(timestamp) {

@@ -29,8 +29,10 @@ class OGSLocation(BaseModel):
     name: str = Field(min_length=1)
     lat: float
     lon: float
+    altitude_m: float = Field(default=0.0, ge=0.0, le=9000.0)
     aperture_m: float = Field(default=1.0, ge=0.1, le=15.0)
     notes: Optional[str] = None
+    builtin: bool = False
 
 
 # ── Users / Chat ─────────────────────────────────────────────────────────
@@ -115,6 +117,7 @@ class SolveRequest(BaseModel):
     # Station
     station_lat: Optional[float] = None
     station_lon: Optional[float] = None
+    station_altitude_m: float = Field(default=0.0, ge=0.0, le=9000.0)
 
     # Optics
     sat_aperture_m: float = Field(default=0.6, ge=0.05, le=5.0)
@@ -156,11 +159,21 @@ class SolveRequest(BaseModel):
     # Fixed optical losses excluding detector (dB)
     fixed_optics_loss_db: float = Field(default=0.0, ge=0.0)
 
+    # Link direction ("downlink" = plane wave, "uplink" = spherical wave)
+    link_direction: str = Field(default="downlink")
+
     # Background noise
     background_enabled: bool = False
     background_Hrad_W_m2_sr_um: float = Field(default=0.0, ge=0.0)
     background_fov_mrad: float = Field(default=0.0, ge=0.0)
     background_delta_lambda_nm: float = Field(default=0.0, ge=0.0)
+
+    # Sun / eclipse
+    sun_exclusion_deg: float = Field(default=0.0, ge=0.0, le=90.0)
+
+    # Received power / link margin
+    tx_power_dbm: Optional[float] = None
+    rx_sensitivity_dbm: Optional[float] = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

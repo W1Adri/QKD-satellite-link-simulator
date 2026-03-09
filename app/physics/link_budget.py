@@ -1,11 +1,16 @@
 # ---------------------------------------------------------------------------
 # app/physics/link_budget.py
 # ---------------------------------------------------------------------------
-# Purpose : Sat-to-ground optical link-budget components for QKD downlink.
+# Purpose : Satellite–ground optical link-budget components for QKD
+#           uplink and downlink channels.
 #
 # Based on:
 #   [1] QUARC: Quantum Research Cubesat — A Constellation for QC
 #   [2] LEO Satellites Constellation-to-Ground QKD Links (Greek QCI)
+#   [3] Maharjan et al., "Atmospheric Effects on Satellite–Ground Free
+#       Space Uplink and Downlink Optical Transmissions",
+#       Appl. Sci. 2022, 12, 10944 — models uplink as spherical wave,
+#       downlink as plane wave for Rytov variance / scintillation.
 #
 # Functions (all pure, no side-effects):
 #   atm_loss_db(elev_deg, zenith_aod_db, zenith_abs_db)
@@ -125,16 +130,28 @@ def _rytov_variance(
     wavelength_nm: float,
     cn2_layers: List[Tuple[float, float]],
     h_gs: float = 0.0,
+    link_direction: str = "downlink",
+    H_sat_m: float = 600_000.0,
 ) -> float:
-    """Compute Rytov variance for downlink (plane-wave approx.).
+    """Compute Rytov variance for downlink or uplink.
 
-    σ_R² = 2.25 k^(7/6) sec(ζ)^(11/6) ∫ Cn²(h) (h - Hgs)^(5/6) dh
+    Based on Maharjan et al., Appl. Sci. 2022, 12, 10944.
+
+    Downlink (plane wave):
+        σ_R² = 2.25 k^(7/6) sec(ζ)^(11/6) ∫ Cn²(h)(h − h₀)^(5/6) dh
+
+    Uplink (spherical wave):
+        σ_R² = 2.25 k^(7/6) sec(ζ)^(11/6) ∫ Cn²(h) [(h−h₀)(H−h)/(H−h₀)]^(5/6) dh
 
     Args:
         elev_deg: elevation in degrees.
         wavelength_nm: wavelength in nm.
         cn2_layers: list of (altitude_m, Cn²) tuples, sorted by altitude.
         h_gs: ground station altitude (m).
+        link_direction: ``"downlink"`` (plane wave) or ``"uplink"``
+            (spherical wave).
+        H_sat_m: satellite altitude above sea level (m), used for
+            uplink spherical-wave kernel.
 
     Returns:
         Rytov variance (dimensionless).
@@ -147,6 +164,16 @@ def _rytov_variance(
     zen_rad = (90.0 - elev_deg) * math.pi / 180.0
     sec_z = 1.0 / max(math.cos(zen_rad), 1e-3)
 
+    is_uplink = (link_direction or "").strip().lower() == "uplink"
+    H_range = max(H_sat_m - h_gs, 1.0)  # total vertical range (m)
+
+    def _kernel(h: float) -> float:
+        dh_g = max(h - h_gs, 0.0)
+        if is_uplink:
+            dh_s = max(H_sat_m - h, 0.0)
+            return (dh_g * dh_s / H_range) ** (5.0 / 6.0)
+        return dh_g ** (5.0 / 6.0)
+
     # Trapezoidal integration
     integral = 0.0
     for i in range(len(cn2_layers) - 1):
@@ -155,8 +182,8 @@ def _rytov_variance(
         dh = h1 - h0
         if dh <= 0:
             continue
-        f0 = cn2_0 * max(h0 - h_gs, 0.0) ** (5.0 / 6.0)
-        f1 = cn2_1 * max(h1 - h_gs, 0.0) ** (5.0 / 6.0)
+        f0 = cn2_0 * _kernel(h0)
+        f1 = cn2_1 * _kernel(h1)
         integral += 0.5 * (f0 + f1) * dh
 
     sigma_r2 = 2.25 * (k ** (7.0 / 6.0)) * (sec_z ** (11.0 / 6.0)) * integral
@@ -169,11 +196,15 @@ def scintillation_loss_db(
     ground_aperture_m: float,
     cn2_layers: Optional[List[Tuple[float, float]]] = None,
     p0: float = 0.01,
+    link_direction: str = "downlink",
+    H_sat_m: float = 600_000.0,
+    h_gs: float = 0.0,
 ) -> float:
     """Scintillation fading loss at quantile *p0* (lognormal model).
 
     Steps:
-      1) Rytov variance from Cn² profile.
+      1) Rytov variance from Cn² profile (plane wave for downlink,
+         spherical wave for uplink).
       2) Point scintillation index (strong-turbulence correction).
       3) Aperture averaging.
       4) Lognormal fade margin at quantile p0.
@@ -184,6 +215,9 @@ def scintillation_loss_db(
         ground_aperture_m: receiver aperture diameter (m).
         cn2_layers: list of (altitude_m, Cn²) tuples.  If None → 0 dB.
         p0: outage quantile (e.g. 0.01 = 1%).
+        link_direction: ``"downlink"`` or ``"uplink"``.
+        H_sat_m: satellite altitude above sea level (m).
+        h_gs: ground station altitude above sea level (m).
 
     Returns:
         Scintillation fade loss in dB (≥ 0).
@@ -194,7 +228,11 @@ def scintillation_loss_db(
     lam = wavelength_nm * 1e-9
 
     # 1) Rytov variance
-    sigma_r2 = _rytov_variance(elev_deg, wavelength_nm, cn2_layers)
+    sigma_r2 = _rytov_variance(
+        elev_deg, wavelength_nm, cn2_layers,
+        h_gs=h_gs,
+        link_direction=link_direction, H_sat_m=H_sat_m,
+    )
     if sigma_r2 < 1e-12:
         return 0.0
 
@@ -293,3 +331,175 @@ def total_link_loss_db(
 def coupling_from_loss(loss_db: float) -> float:
     """Convert total loss (dB) to linear coupling in (0, 1]."""
     return min(1.0, 10.0 ** (-loss_db / 10.0))
+
+
+# ── G) Sun-core angle and eclipse detection ─────────────────────────────
+
+_EARTH_RADIUS_M = 6371000.0   # mean Earth radius (m)
+_SUN_DISTANCE_M = 1.496e11    # mean Earth–Sun distance (m)
+_SUN_RADIUS_M = 6.957e8       # solar radius (m)
+
+
+def sun_core_angle_deg(
+    sat_eci: List[float],
+    station_eci: List[float],
+    sun_dir_eci: List[float],
+) -> float:
+    """Angular separation between the satellite LOS and the Sun, from the station.
+
+    Args:
+        sat_eci: satellite position in ECI (km).
+        station_eci: ground station position in ECI (km).
+        sun_dir_eci: Earth→Sun *unit* vector in ECI.
+
+    Returns:
+        Angle in degrees [0, 180].
+    """
+    # LOS vector from station to satellite (unnormalised)
+    dx = sat_eci[0] - station_eci[0]
+    dy = sat_eci[1] - station_eci[1]
+    dz = sat_eci[2] - station_eci[2]
+    norm_los = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if norm_los < 1e-9:
+        return 0.0
+
+    # Normalise
+    lx, ly, lz = dx / norm_los, dy / norm_los, dz / norm_los
+
+    # Sun direction is already a unit vector
+    cos_angle = lx * sun_dir_eci[0] + ly * sun_dir_eci[1] + lz * sun_dir_eci[2]
+    cos_angle = max(-1.0, min(1.0, cos_angle))
+    return math.degrees(math.acos(cos_angle))
+
+
+def is_eclipsed(sat_eci_km: List[float], sun_dir_eci: List[float]) -> bool:
+    """Determine if the satellite is in Earth's cylindrical shadow.
+
+    Uses a simple cylindrical shadow model: the satellite is eclipsed if
+    it lies behind the Earth (relative to the Sun) and within the Earth's
+    geometric cross-section.
+
+    Args:
+        sat_eci_km: satellite position in ECI (km).
+        sun_dir_eci: Earth→Sun *unit* vector in ECI.
+
+    Returns:
+        True if the satellite is in shadow.
+    """
+    R_E = _EARTH_RADIUS_M / 1000.0  # km
+
+    # Project satellite position onto sun direction
+    dot = (sat_eci_km[0] * sun_dir_eci[0] +
+           sat_eci_km[1] * sun_dir_eci[1] +
+           sat_eci_km[2] * sun_dir_eci[2])
+
+    # Satellite must be on the anti-sun side (dot < 0)
+    if dot >= 0:
+        return False
+
+    # Perpendicular distance from the Earth-Sun axis
+    px = sat_eci_km[0] - dot * sun_dir_eci[0]
+    py = sat_eci_km[1] - dot * sun_dir_eci[1]
+    pz = sat_eci_km[2] - dot * sun_dir_eci[2]
+    perp_dist = math.sqrt(px * px + py * py + pz * pz)
+
+    return perp_dist < R_E
+
+
+# ── H) Received power and link margin ──────────────────────────────────
+
+def received_power_dbm(
+    tx_power_dbm: float,
+    total_loss_db: float,
+) -> float:
+    """Received optical power.
+
+    Args:
+        tx_power_dbm: transmitter power (dBm).
+        total_loss_db: total channel loss (dB, positive).
+
+    Returns:
+        Received power in dBm.
+    """
+    return tx_power_dbm - total_loss_db
+
+
+def link_margin_db(
+    rx_power_dbm: float,
+    sensitivity_dbm: float,
+) -> float:
+    """Link margin above receiver sensitivity.
+
+    Args:
+        rx_power_dbm: received power (dBm).
+        sensitivity_dbm: minimum detectable power (dBm).
+
+    Returns:
+        Margin in dB.  Positive means link is viable.
+    """
+    return rx_power_dbm - sensitivity_dbm
+
+
+# ── I) Shot noise ───────────────────────────────────────────────────────
+
+_H_PLANCK = 6.62607015e-34  # J·s
+_C_LIGHT = 2.99792458e8     # m/s
+
+
+def signal_shot_noise_cps(
+    photon_rate: float,
+    channel_loss_db: float,
+    detector_efficiency: float,
+) -> float:
+    """Signal-induced shot noise contribution (counts per second).
+
+    This is simply the detected signal rate — shot noise variance equals
+    the mean count rate for Poisson statistics.
+
+    Args:
+        photon_rate: source photon rate (cps).
+        channel_loss_db: total channel loss (dB, positive).
+        detector_efficiency: detector quantum efficiency (0–1).
+
+    Returns:
+        Detected signal photon rate (cps).
+    """
+    eta = 10.0 ** (-channel_loss_db / 10.0)
+    return photon_rate * eta * detector_efficiency
+
+
+def stray_light_noise_cps(
+    background_cps: float,
+    detector_efficiency: float,
+) -> float:
+    """Stray-light (background) shot noise at the detector.
+
+    Args:
+        background_cps: background photon rate at receiver input (cps).
+        detector_efficiency: detector quantum efficiency (0–1).
+
+    Returns:
+        Detected stray-light count rate (cps).
+    """
+    return background_cps * detector_efficiency
+
+
+def total_noise_variance_cps(
+    dark_count_rate: float,
+    signal_shot_cps: float,
+    stray_cps: float,
+) -> float:
+    """Total noise variance in counts per second (Poisson model).
+
+    For a Poisson process the variance equals the mean rate.
+    Total noise = dark counts + detected signal shot noise + stray light.
+
+    Args:
+        dark_count_rate: detector dark counts (cps).
+        signal_shot_cps: detected signal rate (cps).
+        stray_cps: detected stray-light rate (cps).
+
+    Returns:
+        Total noise variance (cps).
+    """
+    return dark_count_rate + signal_shot_cps + stray_cps
