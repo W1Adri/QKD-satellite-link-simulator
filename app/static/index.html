@@ -1,0 +1,2148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QKD Sat-Link Simulator - Quantum Key Distribution Planner</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="/static/styles/app.css" />
+  <script type="importmap">
+    {
+      "imports": { 
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body data-theme="dark">
+  <div class="quantum-grid-bg"></div>
+  <div class="app-container workspace">
+    <header class="app-topbar" id="topbar">
+      <div class="topbar-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3.2"/>
+            <path d="M5.2 5.2 8 8M16 16l2.8 2.8"/>
+            <path d="M3.5 12a8.5 8.5 0 0 1 8.5-8.5M20.5 12a8.5 8.5 0 0 1-8.5 8.5" opacity="0.6"/>
+          </svg>
+        </span>
+        <span class="brand-text"><strong>QKO</strong><em>Sat-Link</em></span>
+      </div>
+
+      <button id="btnMenuToggle" class="topbar-icon-btn" type="button" title="Toggle parameters panel" aria-label="Toggle parameters panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <nav class="app-nav" aria-label="Sections">
+        <button class="nav-item active" data-section="orbit" data-title="Orbit"><span class="nav-label">Orbit</span></button>
+        <button class="nav-item" data-section="constellations" data-title="Constellations"><span class="nav-label">Constellations</span></button>
+        <button class="nav-item" data-section="optics" data-title="Optical Link"><span class="nav-label">Optics</span></button>
+        <button class="nav-item" data-section="linkbudget" data-title="Link Budget"><span class="nav-label">Link Budget</span></button>
+        <button class="nav-item" data-section="stations" data-title="Ground Stations"><span class="nav-label">Stations</span></button>
+        <button class="nav-item" data-section="analytics" data-title="Analytics"><span class="nav-label">Analytics</span></button>
+        <button class="nav-item" data-section="weather" data-title="Weather"><span class="nav-label">Weather</span></button>
+        <button class="nav-item" data-section="atmosphere" data-title="Atmosphere"><span class="nav-label">Atmosphere</span></button>
+        <button class="nav-item" data-section="qkd" data-title="QKD Parameters"><span class="nav-label">QKD</span></button>
+        <button class="nav-item" data-section="paper" data-title="Paper (Ntanos 2021)"><span class="nav-label">Paper</span></button>
+        <button class="nav-item" data-section="study" data-title="Constellation Study"><span class="nav-label">Study</span></button>
+        <button class="nav-item" data-section="help" data-title="Help"><span class="nav-label">Help</span></button>
+      </nav>
+
+      <div class="topbar-views" role="group" aria-label="View mode">
+        <button class="view-btn active" data-view="3d" type="button" title="3D globe" aria-label="3D globe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 2.4 2.8 15.6 0 18M12 3c-2.8 2.4-2.8 15.6 0 18"/></svg>
+        </button>
+        <button class="view-btn" data-view="2d" type="button" title="2D map" aria-label="2D map">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m3 7 6-3 6 3 6-3v13l-6 3-6-3-6 3V7Z"/><path d="M9 4v13M15 7v13"/></svg>
+        </button>
+        <button class="view-btn" data-view="fullscreen" type="button" title="Fullscreen" aria-label="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+      </div>
+
+      <div class="topbar-actions">
+        <select id="mapStyleSelect" class="topbar-select" aria-label="Basemap style" title="Basemap style — cartographic bases suit the flat 2D map and figure export"></select>
+        <div class="topbar-export">
+          <button id="btnExportView" class="topbar-chip" type="button" title="Export the current view (globe or map, orbit and pass) as a PNG — no control panels">⤓ PNG</button>
+          <select id="exportScale" class="topbar-select topbar-select--sm" aria-label="Export resolution" title="Export resolution multiplier">
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+            <option value="3" selected>3×</option>
+            <option value="4">4×</option>
+          </select>
+        </div>
+        <button id="btnTheme" class="topbar-chip" type="button" title="Toggle theme">Light mode</button>
+      </div>
+
+      <div id="utcClock" class="utc-clock">
+        <span class="utc-clock-label">Simulation Time (UTC)</span>
+        <span class="utc-clock-date" id="utcClockDate">----/--/--</span>
+        <span class="utc-clock-time" id="utcClockTime">--:--:--</span>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
+        <div class="panel-header">
+          <button id="btnPanelToggle" class="panel-toggle-btn" type="button" aria-pressed="false" title="Hide panel">
+            <span class="toggle-icon">◀</span>
+          </button>
+          <h3 class="panel-title">Orbit</h3>
+        </div>
+        <div class="panel-content">
+          <section class="panel-section active" data-section="orbit">
+            <div class="section-header">
+              <h2>⚙️ Orbit & Resonance</h2>
+              <p class="section-desc">Configure orbital elements and resonance parameters for a single satellite.</p>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label checkbox-row">
+                  <input id="j2Toggle" type="checkbox" checked />
+                  <label for="j2Toggle">Enable J2 Perturbation</label>
+                  <button type="button" class="info-button" aria-label="What is J2 perturbation?" data-info="J2 perturbation accounts for Earth's oblateness, causing secular changes in RAAN and Argument of Perigee.">!</button>
+                </div>
+                <div class="field-label checkbox-row">
+                  <input id="j3Toggle" type="checkbox" />
+                  <label for="j3Toggle">Enable J3 Perturbation</label>
+                  <button type="button" class="info-button" aria-label="What is J3 perturbation?" data-info="J3 is an odd zonal harmonic with no true secular drift — its effect is long-period in argument of perigee and eccentricity. Modeled here as an approximate rate; inactive for near-circular orbits (e≈0). Requires J2 enabled.">!</button>
+                </div>
+                <div class="field-label checkbox-row">
+                  <input id="j4Toggle" type="checkbox" />
+                  <label for="j4Toggle">Enable J4 Perturbation</label>
+                  <button type="button" class="info-button" aria-label="What is J4 perturbation?" data-info="J4 is an even zonal harmonic adding a small genuine secular drift to RAAN and Argument of Perigee on top of J2 (Kozai 1959; Vallado 2013). Much smaller than J2. Requires J2 enabled.">!</button>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <label for="satelliteName">Satellite name</label>
+                <button type="button" class="info-button" aria-label="What is the satellite name?" data-info="Identifier used to label the spacecraft across charts, exports and saved presets.">!</button>
+              </div>
+              <input id="satelliteName" type="text" value="Sat-QKD" />
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <label for="epochInput">Epoch (UTC)</label>
+                <button type="button" class="info-button" aria-label="What is the epoch?" data-info="Reference epoch in Coordinated Universal Time at which the orbital elements are valid.">!</button>
+              </div>
+              <input id="epochInput" type="datetime-local" />
+            </div>
+            <div id="optimizerForm" class="optimizer">
+              <div class="field-group">
+                <div class="field">
+                  <div class="field-label checkbox-row">
+                    <input id="resonanceToggle" type="checkbox" />
+                    <label for="resonanceToggle">Repeating ground track</label>
+                    <button type="button" class="info-button" aria-label="What is a repeating ground track?" data-info="Forces a resonant orbit whose ground track exactly repeats after k satellite revolutions and j sidereal days. The semi-major axis is solved from the integer pair k:j — J2-aware when J2 is enabled (Vallado 2013, repeat ground track) — so the track closes. While enabled, the semi-major axis is a derived value.">!</button>
+                  </div>
+                </div>
+              </div>
+              <div class="field-group inline">
+                <div class="field">
+                  <div class="field-label">
+                    <label for="resOrbits">Revolutions k</label>
+                    <button type="button" class="info-button" aria-label="What is k?" data-info="Number of satellite revolutions in one repeat cycle.">!</button>
+                  </div>
+                  <input id="resOrbits" type="number" inputmode="numeric" min="1" max="500" step="1" value="15" />
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <label for="resDays">Days j</label>
+                    <button type="button" class="info-button" aria-label="What is j?" data-info="Number of sidereal days in one repeat cycle. The orbital period becomes (j/k) sidereal days.">!</button>
+                  </div>
+                  <input id="resDays" type="number" inputmode="numeric" min="1" max="100" step="1" value="1" />
+                </div>
+              </div>
+              <div class="field-group">
+                <div class="field">
+                  <div class="field-label">
+                    <label for="semiMajor">Semi-major axis a (km)</label>
+                    <button type="button" class="info-button" aria-label="What is the semi-major axis?" data-info="Orbit size. Set it freely, or enable the repeating ground track to derive it from the k:j resonance.">!</button>
+                  </div>
+                  <input id="semiMajor" type="number" step="1" min="6538" max="42164" value="6771" />
+                  <input id="semiMajorSlider" type="range" min="6538" max="42164" value="6771" />
+                </div>
+              </div>
+              <p id="resonanceSummary" class="hint" data-resonance-hint>Free orbit — semi-major axis set manually.</p>
+              <button id="btnClearConstellation" type="button" class="btn-secondary" style="margin-top: 1rem;">Clear Constellations</button>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="eccentricity">Eccentricity e</label>
+                  <button type="button" class="info-button" aria-label="What is eccentricity?" data-info="Controls the shape of the orbit. e = 0 is circular, higher values increase perigee-apogee difference." >!</button>
+                </div>
+                <input id="eccentricity" type="number" step="0.001" min="0" max="0.2" value="0.001" />
+                <input id="eccentricitySlider" type="range" min="0" max="0.2" step="0.001" value="0.001" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="inclination">Inclination i (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is inclination?" data-info="Tilt of the orbital plane with respect to Earth's equator, in degrees." >!</button>
+                </div>
+                <input id="inclination" type="number" step="0.1" min="0" max="180" value="53" />
+                <input id="inclinationSlider" type="range" min="0" max="180" step="0.1" value="53" />
+              </div>
+            </div>
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="raan">RAAN Ω (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is RAAN?" data-info="Right Ascension of the Ascending Node. Sets the orientation of the orbital plane with respect to the inertial frame." >!</button>
+                </div>
+                <input id="raan" type="number" step="0.1" min="0" max="360" value="0" />
+                <input id="raanSlider" type="range" min="0" max="360" step="0.1" value="0" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="argPerigee">Argument of perigee ω (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is argument of perigee?" data-info="Angle from the ascending node to the orbit's perigee within the orbital plane." >!</button>
+                </div>
+                <input id="argPerigee" type="number" step="0.1" min="0" max="360" value="0" />
+                <input id="argPerigeeSlider" type="range" min="0" max="360" step="0.1" value="0" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="meanAnomaly">Mean anomaly M₀ (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is mean anomaly?" data-info="Defines the spacecraft position along the orbit at the epoch, expressed as mean anomaly." >!</button>
+                </div>
+                <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
+                <input id="meanAnomalySlider" type="range" min="0" max="360" step="0.1" value="0" />
+              </div>
+            </div>
+
+            <!-- ── Sun-Synchronous Orbit (SSO) Panel ── -->
+            <div id="ssoPanel" class="field-group sso-panel">
+              <header>
+                <h3>☀️ Sun-Synchronous Orbit</h3>
+                <p class="hint">Auto-compute inclination &amp; RAAN for a sun-synchronous orbit</p>
+              </header>
+              <div class="field">
+                <input id="ssoToggle" type="checkbox" />
+                <label for="ssoToggle">Enable SSO mode</label>
+                <button type="button" class="info-button" aria-label="What is SSO?" data-info="A Sun-Synchronous Orbit (SSO) precesses at exactly the same rate as the Earth orbits the Sun (~0.9856°/day), so the satellite always crosses the equator at the same local solar time. The inclination and RAAN are automatically derived from altitude and LTAN.">!</button>
+              </div>
+              <div id="ssoFields" style="display: none;">
+                <div class="field">
+                  <div class="field-label">
+                    <label for="ssoAltitude">Altitude (km)</label>
+                    <button type="button" class="info-button" aria-label="SSO altitude" data-info="Orbital altitude for the sun-synchronous orbit. Valid range is roughly 200–6000 km. The required inclination is computed from this value.">!</button>
+                  </div>
+                  <input id="ssoAltitude" type="number" step="1" min="200" max="6000" value="600" />
+                  <input id="ssoAltitudeSlider" type="range" min="200" max="6000" step="1" value="600" />
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <label for="ssoEccentricity">Eccentricity</label>
+                    <button type="button" class="info-button" aria-label="SSO eccentricity" data-info="Eccentricity for the SSO. Most sun-synchronous orbits are near-circular (e ≈ 0). Frozen orbits may use small eccentricities (e.g. 0.001).">!</button>
+                  </div>
+                  <input id="ssoEccentricity" type="number" step="0.001" min="0" max="0.1" value="0.001" />
+                </div>
+                <div class="field">
+                  <div class="field-label">
+                    <label for="ssoLTAN">Local Time of Ascending Node</label>
+                    <button type="button" class="info-button" aria-label="What is LTAN?" data-info="The local solar time at which the satellite crosses the equator northbound. Common choices: 06:00/18:00 (dawn-dusk, good for solar panel illumination), 10:30 (typical Earth observation, e.g. Sentinel-2/Landsat), 13:30 (afternoon pass).">!</button>
+                  </div>
+                  <select id="ssoLTAN">
+                    <option value="6.0">06:00 (Dawn-dusk)</option>
+                    <option value="9.5">09:30 (Mid-morning)</option>
+                    <option value="10.5" selected>10:30 (Earth Obs, e.g. Sentinel-2)</option>
+                    <option value="12.0">12:00 (Noon)</option>
+                    <option value="13.5">13:30 (Afternoon, e.g. Landsat)</option>
+                    <option value="18.0">18:00 (Dawn-dusk)</option>
+                    <option value="22.5">22:30 (Night-time)</option>
+                  </select>
+                </div>
+                <div class="button-row" style="margin-top: 0.75rem;">
+                  <button id="btnComputeSSO" type="button" class="btn-primary">Compute SSO</button>
+                </div>
+                <div id="ssoResults" class="sso-results" style="display: none; margin-top: 0.75rem;">
+                  <table class="sso-results-table">
+                    <tr><td>Inclination</td><td id="ssoResInc">—</td></tr>
+                    <tr><td>Semi-major axis</td><td id="ssoResSMA">—</td></tr>
+                    <tr><td>RAAN (Ω)</td><td id="ssoResRAAN">—</td></tr>
+                    <tr><td>Period</td><td id="ssoResPeriod">—</td></tr>
+                    <tr><td>Revs / day</td><td id="ssoResRevs">—</td></tr>
+                    <tr><td>RAAN drift</td><td id="ssoResDrift">—</td></tr>
+                    <tr><td>Orbit class</td><td id="ssoResClass">—</td></tr>
+                  </table>
+                  <button id="btnApplySSO" type="button" class="btn-secondary" style="margin-top: 0.5rem; width: 100%;">Apply to orbit elements</button>
+                </div>
+                <div id="ssoError" class="error-message" style="display: none; margin-top: 0.5rem; color: var(--color-error, #ef4444);"></div>
+              </div>
+            </div>
+
+            <div id="orbitMessages" class="panel-messages" hidden></div>
+          </section>
+
+
+
+          <section class="panel-section" data-section="constellations">
+            <div class="section-header">
+              <h2>🌌 Constellations</h2>
+              <p class="section-desc">Design and optimize satellite constellations.</p>
+            </div>
+            
+            <div class="field-group tle-constellation-panel">
+              <header>
+                <h3>🛰️ TLE Constellation Overlays</h3>
+                <p class="hint">Toggle real satellite constellations from TLE data</p>
+              </header>
+              <div class="constellation-list" id="constellationList"></div>
+              <p class="constellation-status" id="constellationStatus" hidden></p>
+            </div>
+            
+            <div id="walkerPanel" class="field-group">
+              <header>
+                <h3>Walker Delta parameters</h3>
+                <p class="hint">Define T (total sats), P (planes) and F (phasing)</p>
+              </header>
+              <div class="field">
+                <div class="field-label">
+                  <label for="walkerT">T (total satellites)</label>
+                  <button type="button" class="info-button" aria-label="Info on Total Satellites" data-info="Total number of satellites in the Walker Delta constellation. This, along with the number of planes, determines satellites per plane.">!</button>
+                </div>
+                <input id="walkerT" type="number" min="1" value="24" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="walkerP">P (planes)</label>
+                  <button type="button" class="info-button" aria-label="Info on Orbital Planes" data-info="Number of orbital planes in the Walker Delta constellation. The planes are evenly spaced in Right Ascension of the Ascending Node (RAAN).">!</button>
+                </div>
+                <input id="walkerP" type="number" min="1" value="6" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="walkerF">F (phasing)</label>
+                  <button type="button" class="info-button" aria-label="Info on Phasing" data-info="Phasing parameter for inter-plane satellite spacing in a Walker Delta constellation. It defines the relative along-track offset between satellites in adjacent planes.">!</button>
+                </div>
+                <input id="walkerF" type="number" min="0" value="1" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                    <label for="walkerA">Semi-major Axis (km)</label>
+                    <button type="button" class="info-button" aria-label="Info on Semi-major Axis" data-info="Semi-major axis for all satellites in the constellation, defining the size and period of their orbits. Given in kilometers.">!</button>
+                </div>
+                <input id="walkerA" type="number" min="6538" max="42164" value="7071" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                    <label for="walkerI">Inclination (°)</label>
+                    <button type="button" class="info-button" aria-label="Info on Inclination" data-info="Inclination for all orbital planes in the constellation, defining the tilt of the orbits relative to the Earth's equator. Given in degrees.">!</button>
+                </div>
+                <input id="walkerI" type="number" min="0" max="180" value="55" />
+              </div>
+              <div class="button-row" style="margin-top: 1rem;">
+                <button id="btnPlotConstellation" type="button" class="btn-primary">Plot Constellation</button>
+                <button id="btnClearOrbit" type="button" class="btn-secondary">Clear Single Orbit</button>
+              </div>
+            </div>
+            <div id="optimizationPanel" class="optimizer-panel">
+              <h3>Constellation Optimization</h3>
+              <div class="field">
+                <div class="field-label">
+                    <label for="simDuration">Simulation Duration (s)</label>
+                    <button type="button" class="info-button" aria-label="Info on Simulation Duration" data-info="The total duration in seconds for the constellation optimization simulation. Longer durations allow for more comprehensive analysis of coverage and revisit times.">!</button>
+                </div>
+                <input id="simDuration" type="number" min="10" step="10" value="3600" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                    <label>Control Points</label>
+                    <button type="button" class="info-button" aria-label="Info on Control Points" data-info="Define specific geographic points on Earth (control points) that the optimization algorithm will try to maximize coverage for.">!</button>
+                </div>
+                <div class="control-points">
+                  <button id="btnDefinePoints" type="button" class="btn-secondary">Define Control Points</button>
+                  <span id="pointsCount">0 points</span>
+                </div>
+                <div id="pointsList" class="points-list" style="margin-top:6px;max-height:120px;overflow:auto;font-size:0.95em;"></div>
+              </div>
+              <div class="field">
+                <button id="btnOptimize" type="button" class="btn-primary">Optimize Design</button>
+                <button id="btnCancelOptimize" type="button" class="btn-secondary" style="margin-left:8px;display:none;">Cancel</button>
+                <span id="optStatus" class="hint">--</span>
+              </div>
+              <div class="field" style="margin-top:6px">
+                <label for="optProgress">Progress</label>
+                <progress id="optProgress" max="1" value="0" style="width:100%;display:block"></progress>
+              </div>
+              <div class="field" style="margin-top:6px">
+                <div class="field-label">
+                    <label><input id="workerToggle" type="checkbox" /> Usar Web Worker para precomputación</label>
+                    <button type="button" class="info-button" aria-label="Info on Web Worker" data-info="Use Web Workers to offload heavy computation, like satellite propagation, to background threads. This keeps the user interface responsive, especially for large constellations.">!</button>
+                </div>
+              </div>
+              <div class="field" style="margin-top:6px">
+                <div class="field-label">
+                    <label for="workerCount">Workers</label>
+                    <button type="button" class="info-button" aria-label="Info on Worker Count" data-info="Number of Web Workers to use for parallel computation. More workers can speed up precomputation on multi-core systems.">!</button>
+                </div>
+                <select id="workerCount">
+                  <option value="1">1 (single)</option>
+                  <option value="2">2</option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="optics">
+            <div class="section-header">
+              <h2>🔭 Optical Link</h2>
+              <p class="section-desc">Configure apertures, wavelength, and temporal sampling</p>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="satAperture">Satellite aperture (m)</label>
+                  <button type="button" class="info-button" aria-label="Satellite aperture info" data-info="Diameter of the satellite transmitting telescope. Larger apertures reduce beam divergence and geometric losses.">!</button>
+                </div>
+                <input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" />
+                <input id="satApertureSlider" type="range" min="0.1" max="3" step="0.05" value="0.6" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="groundAperture">Ground aperture (m)</label>
+                  <button type="button" class="info-button" aria-label="Ground aperture info" data-info="Diameter of the ground station receiving telescope. It defines the collecting area and affects coupling efficiency.">!</button>
+                </div>
+                <input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" />
+                <input id="groundApertureSlider" type="range" min="0.1" max="5" step="0.05" value="1.0" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="wavelength">Wavelength (nm)</label>
+                  <button type="button" class="info-button" aria-label="Wavelength info" data-info="Operating wavelength of the optical link in nanometres. It drives diffraction, atmospheric absorption and detector efficiency.">!</button>
+                </div>
+                <input id="wavelength" type="number" min="600" max="1700" step="1" value="810" />
+                <input id="wavelengthSlider" type="range" min="600" max="1700" step="1" value="810" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="samplesPerOrbit">Samples per orbit</label>
+                  <button type="button" class="info-button" aria-label="Samples per orbit info" data-info="Number of time samples evaluated for each orbital period. More samples capture finer variations along the pass at the cost of computation time.">!</button>
+                </div>
+                <input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" />
+                <input id="samplesPerOrbitSlider" type="range" min="60" max="720" step="10" value="180" />
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="linkbudget" hidden>
+            <div class="section-header">
+              <h2>📉 Link Budget</h2>
+              <p class="section-desc">Configure atmospheric, pointing, scintillation, and fixed optical losses for the satellite–ground link</p>
+            </div>
+
+            <div class="info-message">
+              <strong>Note:</strong> These parameters extend the geometric loss with realistic channel impairments. Changes are reflected in real-time metrics and QKD calculations.
+            </div>
+
+            <!-- Link direction -->
+            <h3>Link Direction</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="linkDirection">Direction</label>
+                  <button type="button" class="info-button" aria-label="Link direction info" data-info="Downlink: satellite→ground (plane wave scintillation). Uplink: ground→satellite (spherical wave scintillation). Aperture roles swap accordingly.">!</button>
+                </div>
+                <select id="linkDirection">
+                  <option value="downlink" selected>Downlink (satellite → ground)</option>
+                  <option value="uplink">Uplink (ground → satellite)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Atmospheric losses -->
+            <h3>Atmospheric Attenuation</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="atmZenithAod">Zenith aerosol optical depth (dB)</label>
+                  <button type="button" class="info-button" aria-label="Zenith AOD info" data-info="One-way aerosol optical depth at zenith in dB. Typical clear sky: 0.5–1 dB. Scales with airmass (1/cos zenith).">!</button>
+                </div>
+                <input id="atmZenithAod" type="number" min="0" max="10" step="0.1" value="0.5" />
+                <input id="atmZenithAodSlider" type="range" min="0" max="10" step="0.1" value="0.5" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="atmZenithAbs">Zenith molecular absorption (dB)</label>
+                  <button type="button" class="info-button" aria-label="Zenith absorption info" data-info="One-way molecular absorption at zenith in dB. Wavelength-dependent; typically 0.1–0.5 dB at 810 nm. Scales with airmass.">!</button>
+                </div>
+                <input id="atmZenithAbs" type="number" min="0" max="10" step="0.1" value="0.3" />
+                <input id="atmZenithAbsSlider" type="range" min="0" max="10" step="0.1" value="0.3" />
+              </div>
+            </div>
+
+            <!-- Pointing error -->
+            <h3>Pointing Error</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="pointingErrorUrad">Pointing jitter (μrad, 1σ)</label>
+                  <button type="button" class="info-button" aria-label="Pointing error info" data-info="One-sigma pointing error of the satellite transmitter in microradians. Typical LEO satellites: 1–10 μrad.">!</button>
+                </div>
+                <input id="pointingErrorUrad" type="number" min="0" max="50" step="0.5" value="2.0" />
+                <input id="pointingErrorUradSlider" type="range" min="0" max="50" step="0.5" value="2.0" />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="patFadingModel">PAT fading model</label>
+                  <button type="button" class="info-button" aria-label="PAT fading model info" data-info="How the pointing jitter is turned into a loss. Rayleigh-averaged: mean fading over a Rayleigh-distributed pointing error (realistic average, adds uplink beam wander in quadrature). Deterministic: peak worst-case Gaussian pointing loss (conservative). Source: Bourgoin et al. 2013; Andrews & Phillips 2005.">!</button>
+                </div>
+                <select id="patFadingModel">
+                  <option value="rayleigh" selected>Rayleigh-averaged (mean fading)</option>
+                  <option value="deterministic">Deterministic (worst-case)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Fixed optical losses -->
+            <h3>Fixed Optical Losses</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="fixedOpticsLoss">System optics loss (dB)</label>
+                  <button type="button" class="info-button" aria-label="Fixed optics info" data-info="Constant optical losses from transmitter optics, receiver optics, fibre coupling, filters, etc. Typical: 3–6 dB.">!</button>
+                </div>
+                <input id="fixedOpticsLoss" type="number" min="0" max="20" step="0.1" value="3.0" />
+                <input id="fixedOpticsLossSlider" type="range" min="0" max="20" step="0.1" value="3.0" />
+              </div>
+            </div>
+
+            <!-- Scintillation -->
+            <h3>Scintillation</h3>
+            <div class="field-group">
+              <div class="field">
+                <input id="scintillationEnabled" type="checkbox" />
+                <label for="scintillationEnabled">Enable scintillation loss</label>
+                <button type="button" class="info-button" aria-label="Scintillation info" data-info="Intensity fluctuations caused by atmospheric turbulence (Cn² profile). Adds a fade margin based on Rytov variance and a specified outage probability.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="scintillationFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="scintillationP0">Outage probability</label>
+                  <button type="button" class="info-button" aria-label="Outage probability info" data-info="Fraction of time the scintillation fade exceeds the budgeted margin. Lower values → higher fade margin. Typical: 0.01 (1%).">!</button>
+                </div>
+                <input id="scintillationP0" type="number" min="0.001" max="0.5" step="0.001" value="0.01" />
+                <input id="scintillationP0Slider" type="range" min="0.001" max="0.5" step="0.001" value="0.01" />
+              </div>
+            </div>
+
+            <!-- Background noise -->
+            <h3>Background Noise</h3>
+            <div class="field-group">
+              <div class="field">
+                <input id="backgroundEnabled" type="checkbox" />
+                <label for="backgroundEnabled">Enable background radiance</label>
+                <button type="button" class="info-button" aria-label="Background noise info" data-info="Adds sky-background photon noise from scattered sunlight or moonlight. Computes count rate from spectral radiance, FOV, receiver aperture and filter bandwidth.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="backgroundFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="bgRadiance">Spectral radiance (W/m²/sr/μm)</label>
+                  <button type="button" class="info-button" aria-label="Spectral radiance info" data-info="Sky spectral radiance at the operating wavelength. Daytime ≈ 10–100 W/m²/sr/μm; night-time ≈ 1e-5.">!</button>
+                </div>
+                <input id="bgRadiance" type="number" min="0" max="200" step="0.01" value="10" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="bgFovMrad">Receiver FOV (mrad)</label>
+                  <button type="button" class="info-button" aria-label="FOV info" data-info="Half-angle field of view of the ground receiver in milliradians. Narrows background collection.">!</button>
+                </div>
+                <input id="bgFovMrad" type="number" min="0.01" max="10" step="0.01" value="0.1" />
+                <input id="bgFovMradSlider" type="range" min="0.01" max="10" step="0.01" value="0.1" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="bgDeltaLambda">Filter bandwidth (nm)</label>
+                  <button type="button" class="info-button" aria-label="Filter bandwidth info" data-info="Spectral width of the receiver bandpass filter in nanometres. Narrower filters reject more background.">!</button>
+                </div>
+                <input id="bgDeltaLambda" type="number" min="0.01" max="50" step="0.01" value="1.0" />
+                <input id="bgDeltaLambdaSlider" type="range" min="0.01" max="50" step="0.01" value="1.0" />
+              </div>
+            </div>
+
+            <!-- Sun exclusion / eclipse -->
+            <h3>Sun Exclusion &amp; Eclipse</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="sunExclusionDeg">Sun exclusion angle (deg)</label>
+                  <button type="button" class="info-button" aria-label="Sun exclusion info" data-info="Minimum angular separation between the satellite line-of-sight and the Sun. Samples inside this cone are flagged as sun-excluded. Set 0 to disable.">!</button>
+                </div>
+                <input id="sunExclusionDeg" type="number" min="0" max="90" step="0.5" value="0" />
+                <input id="sunExclusionDegSlider" type="range" min="0" max="90" step="0.5" value="0" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="minElevationDeg">Min elevation angle (deg)</label>
+                  <button type="button" class="info-button" aria-label="Min elevation info" data-info="Minimum elevation angle above horizon for link establishment. Cuts off asymptotic geometric losses near the horizon. Default 20° is typical for practical links.">!</button>
+                </div>
+                <input id="minElevationDeg" type="number" min="0" max="90" step="1" value="20" />
+                <input id="minElevationDegSlider" type="range" min="0" max="90" step="1" value="20" />
+              </div>
+            </div>
+
+            <!-- Received power / link margin -->
+            <h3>Link Margin</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="txPowerDbm">Tx power (dBm)</label>
+                  <button type="button" class="info-button" aria-label="Tx power info" data-info="Transmitter optical power in dBm. Used together with total link loss to compute received power.">!</button>
+                </div>
+                <input id="txPowerDbm" type="number" min="-30" max="60" step="0.1" value="30" />
+                <input id="txPowerDbmSlider" type="range" min="-30" max="60" step="0.1" value="30" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="rxSensitivityDbm">Rx sensitivity (dBm)</label>
+                  <button type="button" class="info-button" aria-label="Rx sensitivity info" data-info="Receiver minimum detectable power in dBm. Link margin = received power − sensitivity. Negative margin means no link.">!</button>
+                </div>
+                <input id="rxSensitivityDbm" type="number" min="-120" max="0" step="0.1" value="-90" />
+                <input id="rxSensitivityDbmSlider" type="range" min="-120" max="0" step="0.1" value="-90" />
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="stations">
+            <div class="section-header">
+              <h2>📡 Ground Stations</h2>
+              <p class="section-desc">Manage ground terminals and turbulence parameters</p>
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <label for="stationSelect">Active ground station</label>
+                <button type="button" class="info-button" aria-label="Ground station selector info" data-info="Choose the ground station used for link calculations. Custom stations can be added or removed below.">!</button>
+              </div>
+            </div>
+            <div class="station-toolbar">
+              <select id="stationSelect" aria-label="Ground station list"></select>
+              <button id="btnAddStation" type="button" title="Add a new ground station">Add</button>
+              <button id="btnDeleteStation" type="button" title="Remove the selected station">Delete</button>
+              <button id="btnFocusStation" type="button" title="Fly the map to the selected station">Focus</button>
+            </div>
+
+            <h4>Map display</h4>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="stationVisibility">Stations on the map</label>
+                  <button type="button" class="info-button" aria-label="Station visibility info" data-info="Controls which ground-station markers are drawn on the globe and the 2D map. Showing only the active station declutters a figure for a single-station case study; it does not change any computation.">!</button>
+                </div>
+                <select id="stationVisibility">
+                  <option value="all" selected>Show all stations</option>
+                  <option value="selected">Show only the active station</option>
+                  <option value="none">Hide all stations</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="field-label checkbox-row">
+                  <input id="stationHideNames" type="checkbox" />
+                  <label for="stationHideNames">Hide station names</label>
+                  <button type="button" class="info-button" aria-label="Station names info" data-info="Hides the name labels while keeping the station markers visible — useful when exporting a figure where the labels would collide with the ground track.">!</button>
+                </div>
+              </div>
+            </div>
+
+            <h4>Site turbulence parameters</h4>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="groundCn2Day">Ground Cn² (day) at h = 0</label>
+                  <button type="button" class="info-button" aria-label="Daytime Cn2 info" data-info="Surface structure constant used when the station is sunlit. Guides the Hufnagel-Valley turbulence profile generation.">!</button>
+                </div>
+                <input id="groundCn2Day" type="text" value="5e-14" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="groundCn2Night">Ground Cn² (night) at h = 0</label>
+                  <button type="button" class="info-button" aria-label="Nighttime Cn2 info" data-info="Surface structure constant used during local night-time conditions. Lower values usually indicate calmer turbulence." >!</button>
+                </div>
+                <input id="groundCn2Night" type="text" value="5e-15" />
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="analytics">
+            <div class="section-header">
+              <h2>📊 Analytics</h2>
+              <p class="section-desc">Real-time metrics and performance analysis</p>
+            </div>
+            <section class="instant-metrics" aria-live="polite">
+              <h4 class="metrics-title">⚡ Real-time Link Metrics</h4>
+              <p>
+                <span class="metric-label">Link loss (dB)
+                  <button type="button" class="info-button" aria-label="Link loss info" data-info="Total geometric plus atmospheric attenuation in decibels at the current simulation time.">!</button>
+                </span>
+                <strong id="lossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Elevation (deg)
+                  <button type="button" class="info-button" aria-label="Elevation info" data-info="Angle between the station horizon and the satellite line-of-sight. Higher elevation generally improves link quality.">!</button>
+                </span>
+                <strong id="elevationMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Range (km)
+                  <button type="button" class="info-button" aria-label="Range info" data-info="Instantaneous slant range between the satellite and the ground station in kilometres.">!</button>
+                </span>
+                <strong id="distanceMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Zenith angle (deg)
+                  <button type="button" class="info-button" aria-label="Zenith angle info" data-info="Complementary angle to elevation, measuring the deviation from the station zenith.">!</button>
+                </span>
+                <strong id="zenithMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Doppler shift (Hz)
+                  <button type="button" class="info-button" aria-label="Doppler info" data-info="Frequency offset caused by the relative radial velocity between satellite and ground station.">!</button>
+                </span>
+                <strong id="dopplerMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Fried parameter r0 (m)
+                  <button type="button" class="info-button" aria-label="Fried parameter info" data-info="Atmospheric coherence diameter derived from the current turbulence model. Larger r0 means weaker turbulence.">!</button>
+                </span>
+                <strong id="r0Metric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Greenwood frequency (Hz)
+                  <button type="button" class="info-button" aria-label="Greenwood frequency info" data-info="Characteristic turbulence temporal frequency that sets the bandwidth required for adaptive optics.">!</button>
+                </span>
+                <strong id="fGMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Isoplanatic angle (&quot;)
+                  <button type="button" class="info-button" aria-label="Isoplanatic angle info" data-info="Angular region over which wavefront distortions are correlated. Expressed in arcseconds." >!</button>
+                </span>
+                <strong id="theta0Metric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">RMS wind (m/s)
+                  <button type="button" class="info-button" aria-label="Wind info" data-info="Root-mean-square high-altitude wind speed driving turbulence layers within the chosen model.">!</button>
+                </span>
+                <strong id="windMetric">--</strong>
+              </p>
+            </section>
+
+            <section class="instant-metrics" aria-live="polite">
+              <h4 class="metrics-title">📉 Link Budget Breakdown</h4>
+              <p>
+                <span class="metric-label">Geometric loss
+                  <button type="button" class="info-button" aria-label="Geo loss info" data-info="Free-space diffraction loss from beam divergence and finite receiver aperture.">!</button>
+                </span>
+                <strong id="geoLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Atmospheric loss
+                  <button type="button" class="info-button" aria-label="Atm loss info" data-info="Combined aerosol optical depth and molecular absorption, scaled by airmass.">!</button>
+                </span>
+                <strong id="atmLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Pointing loss
+                  <button type="button" class="info-button" aria-label="Pointing loss info" data-info="Power penalty from satellite transmitter pointing jitter.">!</button>
+                </span>
+                <strong id="pointingLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Scintillation loss
+                  <button type="button" class="info-button" aria-label="Scintillation loss info" data-info="Fade margin from atmospheric turbulence scintillation at the specified outage probability.">!</button>
+                </span>
+                <strong id="scintLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Fixed optics loss
+                  <button type="button" class="info-button" aria-label="Fixed loss info" data-info="Constant loss from transmitter/receiver optics, filters, and fibre coupling.">!</button>
+                </span>
+                <strong id="fixedLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label"><strong>Total link loss</strong>
+                  <button type="button" class="info-button" aria-label="Total loss info" data-info="Sum of all loss components: geometric + atmospheric + pointing + scintillation + fixed optics.">!</button>
+                </span>
+                <strong id="totalLossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Channel coupling
+                  <button type="button" class="info-button" aria-label="Coupling info" data-info="Overall power coupling efficiency (linear) combining all loss mechanisms.">!</button>
+                </span>
+                <strong id="couplingMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Background noise
+                  <button type="button" class="info-button" aria-label="Background info" data-info="Sky background photon count rate from scattered light entering the receiver (counts per second).">!</button>
+                </span>
+                <strong id="bgNoiseMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Sun-core angle
+                  <button type="button" class="info-button" aria-label="Sun angle info" data-info="Angular separation between the satellite line-of-sight and the Sun as seen from the station (degrees).">!</button>
+                </span>
+                <strong id="sunAngleMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Eclipse
+                  <button type="button" class="info-button" aria-label="Eclipse info" data-info="Whether the satellite is in Earth's cylindrical shadow (eclipsed = no direct sunlight on satellite).">!</button>
+                </span>
+                <strong id="eclipseMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Sun excluded
+                  <button type="button" class="info-button" aria-label="Sun excluded info" data-info="Whether the current sample falls inside the sun-exclusion cone (too close to the Sun for safe/useful operation).">!</button>
+                </span>
+                <strong id="sunExcludedMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Rx power
+                  <button type="button" class="info-button" aria-label="Rx power info" data-info="Received optical power at the detector in dBm (Tx power minus total link loss).">!</button>
+                </span>
+                <strong id="rxPowerMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Link margin
+                  <button type="button" class="info-button" aria-label="Link margin info" data-info="Received power minus receiver sensitivity in dB. Positive = link viable, negative = no link.">!</button>
+                </span>
+                <strong id="linkMarginMetric">--</strong>
+              </p>
+            </section>
+            <h4 class="metrics-title">📈 Full Pass Metrics</h4>
+            <p>Select a metric to visualize evolution over the complete pass.</p>
+            <ul class="metric-graph-list">
+              <li>
+                <span>Geometric loss (dB)
+                  <button type="button" class="info-button" aria-label="Geometric loss plot info" data-info="Plots the free-space and pointing losses due to beam divergence and station aperture over the full pass.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="loss">Show graph</button>
+              </li>
+              <li>
+                <span>Station elevation (deg)
+                  <button type="button" class="info-button" aria-label="Elevation plot info" data-info="Shows the elevation angle of the satellite as seen from the station versus time." >!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="elevation">Show graph</button>
+              </li>
+              <li>
+                <span>Satellite-ground range (km)
+                  <button type="button" class="info-button" aria-label="Range plot info" data-info="Displays the changing distance between satellite and ground station for the selected pass." >!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="distance">Show graph</button>
+              </li>
+              <li>
+                <span>Fried parameter r0 vs time
+                  <button type="button" class="info-button" aria-label="r0 plot info" data-info="Tracks the turbulence coherence diameter predicted along the pass, useful for adaptive optics design." >!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="r0">Show graph</button>
+              </li>
+              <li>
+                <span>Greenwood frequency vs time
+                  <button type="button" class="info-button" aria-label="fG plot info" data-info="Shows how the Greenwood frequency evolves, indicating the turbulence bandwidth requirements." >!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="fG">Show graph</button>
+              </li>
+              <li>
+                <span>Isoplanatic angle vs time
+                  <button type="button" class="info-button" aria-label="Isoplanatic plot info" data-info="Evolution of the isoplanatic angle, useful for evaluating adaptive optics field-of-view.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="theta0">Show graph</button>
+              </li>
+              <li>
+                <span>RMS wind speed vs time
+                  <button type="button" class="info-button" aria-label="Wind plot info" data-info="High-altitude wind speed used in turbulence models across the simulated pass." >!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="wind">Show graph</button>
+              </li>
+            </ul>
+
+            <h4 class="metrics-title">📉 Link Budget Graphs</h4>
+            <p>Full-pass evolution of link budget components.</p>
+            <ul class="metric-graph-list">
+              <li>
+                <span>Total link loss (dB)
+                  <button type="button" class="info-button" aria-label="Total loss plot info" data-info="Sum of all link budget loss components vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="totalLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Atmospheric loss (dB)
+                  <button type="button" class="info-button" aria-label="Atm loss plot info" data-info="Aerosol + molecular absorption vs time, scaled by airmass.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="atmLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Pointing loss (dB)
+                  <button type="button" class="info-button" aria-label="Pointing loss plot info" data-info="Power loss from satellite pointing jitter vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="pointingLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Scintillation loss (dB)
+                  <button type="button" class="info-button" aria-label="Scint loss plot info" data-info="Turbulence fade margin vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="scintLoss">Show graph</button>
+              </li>
+              <li>
+                <span>Background noise (cps)
+                  <button type="button" class="info-button" aria-label="Background noise plot info" data-info="Sky background photon count rate vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="backgroundNoise">Show graph</button>
+              </li>
+              <li>
+                <span>Sun-core angle (deg)
+                  <button type="button" class="info-button" aria-label="Sun angle plot info" data-info="Angular separation between satellite LOS and Sun direction vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="sunAngle">Show graph</button>
+              </li>
+              <li>
+                <span>Received power (dBm)
+                  <button type="button" class="info-button" aria-label="Rx power plot info" data-info="Received optical power (Tx power − total loss) vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="rxPower">Show graph</button>
+              </li>
+              <li>
+                <span>Link margin (dB)
+                  <button type="button" class="info-button" aria-label="Link margin plot info" data-info="Received power minus receiver sensitivity vs time.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="linkMargin">Show graph</button>
+              </li>
+            </ul>
+
+            <h4 class="metrics-title">🔬 Parametric Link Margin Study</h4>
+            <p>Sweep ground-level Cn₀² for multiple elevation angles. Uses Hufnagel-Valley 5/7 model.</p>
+            <button type="button" id="btnLinkMarginStudy" class="btn-action btn-glow">Run FSO Link Margin Study</button>
+
+            <h4 class="metrics-title">🛰️ Pass Time over OGS</h4>
+            <p>Total time the satellite has direct line-of-sight to the selected OGS within the chosen maximum zenith angle.</p>
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="passZenithThreshold">Max zenith angle (°)</label>
+                  <button type="button" class="info-button" aria-label="Max zenith info" data-info="Maximum zenith angle (measured from station vertical) below which the satellite is considered in communication range. E.g. 70° means only passes with zenith &lt; 70° (elevation &gt; 20°) count.">!</button>
+                </div>
+                <input id="passZenithThreshold" type="number" min="0" max="90" step="1" value="70" />
+                <input id="passZenithThresholdSlider" type="range" min="0" max="90" step="1" value="70" />
+              </div>
+              <div class="field" style="align-self:flex-end">
+                <button id="btnComputePassTime" type="button" class="btn-action">Compute</button>
+              </div>
+            </div>
+            <div id="passTimeResults" style="margin-top:.5rem;display:none">
+              <p><span class="metric-label">Total pass time</span> <strong id="passTimeTotalMetric">--</strong></p>
+              <p><span class="metric-label">Number of passes</span> <strong id="passTimeCountMetric">--</strong></p>
+              <p><span class="metric-label">Longest single pass</span> <strong id="passTimeLongestMetric">--</strong></p>
+            </div>
+
+            <!-- Key Volume Results (SYS-01, SYS-02) -->
+            <div id="keyVolumeResults" style="display:none; margin-top:1rem;">
+              <h4 class="metrics-title">🔑 Key Volume</h4>
+              <div id="keyVolumeSummary" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0.5rem; margin-bottom:0.75rem;"></div>
+              <div id="keyVolumePassTable"></div>
+              <div id="keyVolumeDailyTable"></div>
+            </div>
+
+            <!-- PCFLOS Controls (SYS-05) -->
+            <div id="pcflosSection" style="margin-top:1rem;">
+              <h4 class="metrics-title">☁️ Cloud Statistics (PCFLOS)</h4>
+              <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem;">
+                <label style="display:flex; align-items:center; gap:0.25rem;">
+                  Cloud Threshold (%):
+                  <input type="number" id="pcflosThreshold" value="30" min="0" max="100" step="5" style="width:70px" />
+                </label>
+                <button id="pcflosFetchBtn" type="button" class="btn-action">Fetch PCFLOS</button>
+              </div>
+              <div id="pcflosResults" style="display:none; margin-top:0.5rem;"></div>
+            </div>
+
+            <!-- Relay Configuration (SYS-03, SYS-04) -->
+            <div id="relaySection" style="margin-top:1rem; border-top:1px solid rgba(255,255,255,0.1); padding-top:1rem;">
+              <h4 class="metrics-title">🛰️ Trusted Node Relay</h4>
+              <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem;">
+                <label style="display:flex; align-items:center; gap:0.25rem;">
+                  Station A:
+                  <select id="relayStationA" style="min-width:150px;"></select>
+                </label>
+                <label style="display:flex; align-items:center; gap:0.25rem;">
+                  Station B:
+                  <select id="relayStationB" style="min-width:150px;"></select>
+                </label>
+                <button id="relayRunBtn" type="button" class="btn-action">Run Relay</button>
+              </div>
+              <div id="relayResults" style="display:none; margin-top:0.5rem;"></div>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="weather">
+            <div class="section-header">
+              <h2>🌤️ Weather Layers</h2>
+              <p class="section-desc">Global atmospheric data visualization</p>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherFieldSelect">Parameter</label>
+                  <button type="button" class="info-button" aria-label="Weather field info" data-info="Choose the atmospheric parameter to sample globally from Open-Meteo forecast or reanalysis data.">!</button>
+                </div>
+                <select id="weatherFieldSelect"></select>
+              </div>
+            </div>
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherLevelSelect">Pressure level (hPa)</label>
+                  <button type="button" class="info-button" aria-label="Pressure level info" data-info="Select the pressure surface that corresponds to the desired altitude band.">!</button>
+                </div>
+                <select id="weatherLevelSelect"></select>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherSamples">Samples</label>
+                  <button type="button" class="info-button" aria-label="Samples info" data-info="Controls the number of sample points taken worldwide. More samples provide smoother gradients but take longer to fetch.">!</button>
+                </div>
+                <input id="weatherSamples" type="number" min="16" max="900" step="8" value="120" />
+                <input id="weatherSamplesSlider" type="range" min="16" max="900" step="8" value="120" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherTime">Field timestamp (UTC)</label>
+                  <button type="button" class="info-button" aria-label="Weather time info" data-info="UTC time corresponding to the hourly slice requested from Open-Meteo.">!</button>
+                </div>
+                <input id="weatherTime" type="datetime-local" />
+              </div>
+            </div>
+            <div class="field-group inline">
+              <button id="weatherFetchBtn" type="button">Fetch field</button>
+              <button id="weatherClearBtn" type="button" class="ghost">Clear overlay</button>
+            </div>
+            <p id="weatherStatus" class="hint"></p>
+
+            <!-- ── OGS Ground-Level Irradiance ─────────────────────────── -->
+            <hr class="section-divider" />
+            <div class="section-header">
+              <h2>☀️ OGS Ground Irradiance</h2>
+              <p class="section-desc">Solar irradiance at the selected ground station — via Open-Meteo or clear-sky model.</p>
+            </div>
+
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="irradianceMethod">Method</label>
+                  <button type="button" class="info-button" aria-label="Irradiance method info" data-info="'Analytical' uses a clear-sky model (Spencer 1971 + Kasten–Young 1989 air-mass). 'Open-Meteo' fetches measured / forecast GHI, DNI, DHI from the Open-Meteo Solar Radiation API.">!</button>
+                </div>
+                <select id="irradianceMethod">
+                  <option value="analytical" selected>Analytical (clear-sky model)</option>
+                  <option value="open-meteo">Open-Meteo (measured / forecast)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="irradianceTime">Timestamp (UTC)</label>
+                  <button type="button" class="info-button" aria-label="Irradiance time info" data-info="UTC date/time for which irradiance is computed or fetched. Defaults to the epoch set in the Orbit panel.">!</button>
+                </div>
+                <input id="irradianceTime" type="datetime-local" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="irradianceAltitude">Altitude (m)</label>
+                  <button type="button" class="info-button" aria-label="Station altitude info" data-info="Station altitude above sea level in metres. Used by the analytical model for air-mass correction.">!</button>
+                </div>
+                <input id="irradianceAltitude" type="number" min="0" max="9000" step="10" value="0" />
+              </div>
+            </div>
+
+            <div class="field-group inline">
+              <button id="btnFetchIrradiance" type="button">Compute irradiance</button>
+            </div>
+            <p id="irradianceStatus" class="hint" hidden></p>
+
+            <div id="irradianceMetrics" class="metrics-grid" style="display: none;">
+              <div class="metric-card">
+                <span class="metric-label">GHI</span>
+                <span id="irradianceGHI" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">DNI</span>
+                <span id="irradianceDNI" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">DHI</span>
+                <span id="irradianceDHI" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Solar elevation</span>
+                <span id="irradianceElevation" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Day / Night</span>
+                <span id="irradianceDayNight" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Air mass</span>
+                <span id="irradianceAirMass" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Day length</span>
+                <span id="irradianceDayLength" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Sunrise (UTC)</span>
+                <span id="irradianceSunrise" class="metric-value">--</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Sunset (UTC)</span>
+                <span id="irradianceSunset" class="metric-value">--</span>
+              </div>
+              <div class="metric-card" style="grid-column: 1 / -1;">
+                <span class="metric-label">Source</span>
+                <span id="irradianceSource" class="metric-value">--</span>
+              </div>
+            </div>
+
+            <div id="irradianceChart" style="display: none; margin-top: 0.75rem; width: 100%; height: 180px;"></div>
+          </section>
+
+          <section class="panel-section" data-section="atmosphere">
+            <div class="section-header">
+              <h2>🌍 Atmospheric Models</h2>
+              <p class="section-desc">Turbulence and attenuation models</p>
+            </div>
+            <fieldset class="model-selector" role="radiogroup" aria-label="Atmospheric turbulence models">
+              <legend class="sr-only">Atmospheric turbulence model</legend>
+              <label class="model-card">
+                <input type="radio" name="atmosModel" value="hufnagel-valley" data-atmos-model="hufnagel-valley" checked />
+                <div class="model-card-body">
+                  <div class="model-card-header">
+                    <span>Hufnagel-Valley 5/7</span>
+                    <button type="button" class="info-button" aria-label="Hufnagel-Valley info" data-info="Classic parametric turbulence profile combining surface Cn² values with high-altitude wind speed. Provides analytic formulas for r0, θ0 and fG.">!</button>
+                  </div>
+                  <p>Uses surface Cn² day/night inputs and Open-Meteo wind components at 300 hPa to estimate turbulence strength.</p>
+                  <ul class="model-data-list">
+                    <li><strong>Open-Meteo</strong>: wind_u_component_300hPa, wind_v_component_300hPa</li>
+                    <li><strong>Site inputs</strong>: Cn²(0) day/night</li>
+                    <li><strong>Outputs</strong>: r₀, θ₀, f<sub>G</sub>, wind RMS</li>
+                  </ul>
+                </div>
+              </label>
+              <label class="model-card">
+                <input type="radio" name="atmosModel" value="bufton" data-atmos-model="bufton" />
+                <div class="model-card-body">
+                  <div class="model-card-header">
+                    <span>Bufton boundary-layer</span>
+                    <button type="button" class="info-button" aria-label="Bufton info" data-info="Empirical boundary-layer model blending surface meteorology with wind shear to estimate Cn² vertical gradients.">!</button>
+                  </div>
+                  <p>Extends the surface Cn² inputs with wind and temperature gradients from Open-Meteo to refine low-altitude turbulence.</p>
+                  <ul class="model-data-list">
+                    <li><strong>Open-Meteo</strong>: wind components at 300/500/850 hPa, temperature_850hPa</li>
+                    <li><strong>Site inputs</strong>: Cn²(0) day/night, local lapse rate (future)</li>
+                    <li><strong>Outputs</strong>: Layered r₀, θ₀, scintillation index</li>
+                  </ul>
+                </div>
+              </label>
+              <label class="model-card">
+                <input type="radio" name="atmosModel" value="greenwood" data-atmos-model="greenwood" />
+                <div class="model-card-body">
+                  <div class="model-card-header">
+                    <span>Greenwood lidar-inspired</span>
+                    <button type="button" class="info-button" aria-label="Greenwood model info" data-info="Piecewise turbulence model driven by measured wind speeds and temperature to estimate adaptive optics bandwidth requirements.">!</button>
+                  </div>
+                  <p>Targets adaptive optics design by combining wind-shear derived layer speeds with humidity to infer scintillation and coherence time.</p>
+                  <ul class="model-data-list">
+                    <li><strong>Open-Meteo</strong>: wind_u/v at 200 &amp; 300 hPa, temperature_200hPa, relative_humidity_700hPa</li>
+                    <li><strong>Derived</strong>: Greenwood frequency, coherence time τ<sub>0</sub></li>
+                  </ul>
+                </div>
+              </label>
+            </fieldset>
+            <div class="data-sources">
+              <div class="field-label">
+                <h4>Planned Open-Meteo drivers</h4>
+                <button type="button" class="info-button" aria-label="Open-Meteo data info" data-info="Overview of the atmospheric variables that will be requested from Open-Meteo to feed the selected model.">!</button>
+              </div>
+              <ul class="data-list">
+                <li>High-altitude wind vectors (200 hPa, 300 hPa, 500 hPa)</li>
+                <li>Temperature profiles at 200/300/500/850 hPa</li>
+                <li>Relative humidity or specific humidity for moisture-dependent losses</li>
+                <li>Shortwave radiation and direct normal irradiance for background noise estimates</li>
+                <li>Surface pressure and planetary boundary layer height (future integration)</li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="qkd" hidden>
+            <div class="section-header">
+              <h2>🔐 Quantum Key Distribution</h2>
+              <p class="section-desc">QKD protocol configuration and secure key rate calculations</p>
+            </div>
+            
+            <div class="info-message">
+              <strong>Note:</strong> QKD calculations integrate with optical link budget and atmospheric turbulence models to provide realistic secure key rate estimates.
+            </div>
+            
+            <div class="field">
+              <div class="field-label">
+                <label for="qkdProtocol">QKD Protocol</label>
+                <button type="button" class="info-button" aria-label="QKD Protocol info" data-info="Select the quantum key distribution protocol: BB84 (prepare-and-measure), E91 (entanglement-based), or Continuous Variable QKD.">!</button>
+              </div>
+              <select id="qkdProtocol">
+                <option value="bb84">BB84 (Discrete Variable)</option>
+                <option value="bb84-decoy" selected>BB84 decoy-state (Ma et al. 2005)</option>
+                <option value="e91">E91 (Entanglement-Based)</option>
+                <option value="cv-qkd">Continuous Variable QKD</option>
+                <option value="mdi-qkd">MDI-QKD (Lo, Curty &amp; Qi 2012)</option>
+                <option value="tf-qkd">TF-QKD (Lucamarini et al. 2018)</option>
+              </select>
+              <p class="hint" style="margin-top:.35rem;">Decoy-state BB84 is the reference protocol: it is the one the per-pass finite-key bound (Lim et al. 2014) and the constellation study apply to. MDI-QKD and TF-QKD are computed by the backend only — use <em>Compute SKR Time Series</em> below, not the instantaneous estimate.</p>
+            </div>
+            
+            <div class="field">
+              <div class="field-label">
+                <label for="photonRate">Photon Emission Rate (MHz)</label>
+                <button type="button" class="info-button" aria-label="Photon rate info" data-info="Rate at which single photons are emitted from the satellite transmitter.">!</button>
+              </div>
+              <input id="photonRate" type="number" step="1" min="1" max="1000" value="100" />
+              <input id="photonRateSlider" type="range" min="1" max="1000" step="1" value="100" />
+            </div>
+            
+            <div class="field">
+              <div class="field-label">
+                <label for="detectorEfficiency">Detector Efficiency</label>
+                <button type="button" class="info-button" aria-label="Detector efficiency info" data-info="Quantum efficiency of single-photon detectors at the ground station (0-1).">!</button>
+              </div>
+              <input id="detectorEfficiency" type="number" step="0.01" min="0" max="1" value="0.65" />
+              <input id="detectorEfficiencySlider" type="range" min="0" max="1" step="0.01" value="0.65" />
+            </div>
+            
+            <div class="field">
+              <div class="field-label">
+                <label for="darkCountRate">Dark Count Rate (Hz)</label>
+                <button type="button" class="info-button" aria-label="Dark count info" data-info="Background noise rate from detector dark counts and stray light.">!</button>
+              </div>
+              <input id="darkCountRate" type="number" step="10" min="0" max="10000" value="100" />
+              <input id="darkCountRateSlider" type="range" min="0" max="10000" step="10" value="100" />
+            </div>
+            
+            <div class="field">
+              <div class="field-label">
+                <label for="opticalFilterBandwidth">Optical Filter Bandwidth (nm)</label>
+                <button type="button" class="info-button" aria-label="Filter bandwidth info" data-info="Spectral bandwidth of optical filter to reject background light.">!</button>
+              </div>
+              <input id="opticalFilterBandwidth" type="number" step="0.1" min="0.1" max="10" value="1.0" />
+              <input id="opticalFilterBandwidthSlider" type="range" min="0.1" max="10" step="0.1" value="1.0" />
+            </div>
+            
+            <h3>QKD Performance Metrics</h3>
+            
+            <div class="metrics-grid">
+              <div class="metric-box">
+                <span class="metric-label">QBER (Quantum Bit Error Rate)</span>
+                <span id="qberMetric" class="metric-value">--</span>
+              </div>
+              <div class="metric-box">
+                <span class="metric-label">Raw Key Rate</span>
+                <span id="rawKeyRateMetric" class="metric-value">--</span>
+              </div>
+              <div class="metric-box">
+                <span class="metric-label">Secure Key Rate</span>
+                <span id="secureKeyRateMetric" class="metric-value">--</span>
+              </div>
+              <div class="metric-box">
+                <span class="metric-label">Channel Transmittance</span>
+                <span id="channelTransmittanceMetric" class="metric-value">--</span>
+              </div>
+            </div>
+            
+            <button id="btnCalculateQKD" type="button" class="btn-primary">Calculate QKD Performance</button>
+            <p id="qkdStatus" class="hint"></p>
+
+            <hr style="margin:1rem 0; border-color:rgba(255,255,255,0.1);">
+            <h3>🧪 Advanced Analysis</h3>
+            <p class="hint" style="margin-bottom:0.75rem;">Every option here is <strong>off by default</strong>, exactly as on the API — untouched, the run reproduces the plain asymptotic clear-sky result. They apply to <em>Compute SKR Time Series</em> below and to the Constellation Study panel, which uses this same configuration as its base.</p>
+
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="solveTotalOrbits">Simulation window (orbits)</label>
+                  <button type="button" class="info-button" aria-label="Simulation window info" data-info="Number of orbital revolutions propagated by the backend for the SKR series and key volume. A key-volume total over 3 orbits and one over a day are different results, so the window is explicit. ~15 orbits ≈ 1 day in LEO.">!</button>
+                </div>
+                <input id="solveTotalOrbits" type="number" min="1" max="50" step="1" value="3" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="keyVolumeElevThreshold">Pass boundary elevation (°)</label>
+                  <button type="button" class="info-button" aria-label="Pass boundary info" data-info="Elevation that defines the START and END of a pass for the key-volume integral and for the finite-key block (one pass = one block). Distinct from the minimum link elevation in the Link Budget panel, which decides whether a sample carries any key at all.">!</button>
+                </div>
+                <input id="keyVolumeElevThreshold" type="number" min="0" max="90" step="1" value="5" />
+              </div>
+            </div>
+
+            <h4 class="metrics-title">⏱️ Temporal Gating (daytime QKD)</h4>
+            <div class="field-group">
+              <div class="field">
+                <input id="temporalGatingEnabled" type="checkbox" />
+                <label for="temporalGatingEnabled">Enable detection gating</label>
+                <button type="button" class="info-button" aria-label="Temporal gating info" data-info="A narrow detection gate of width Δt around each expected arrival admits background only over the duty cycle Δt·f_rep, suppressing sky radiance by that factor while leaving the signal untouched. Requires background radiance to be enabled in the Link Budget panel — with no background there is nothing to gate.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="temporalGatingFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="gateTimeNs">Gate width Δt (ns)</label>
+                  <button type="button" class="info-button" aria-label="Gate width info" data-info="Detector gate width in nanoseconds. Background suppression factor = Δt · f_rep, so at 100 MHz a 1 ns gate keeps 10% of the sky counts. Cannot be shorter than the pulse jitter in practice.">!</button>
+                </div>
+                <input id="gateTimeNs" type="number" min="0.01" max="1000" step="0.1" value="1.0" />
+              </div>
+            </div>
+
+            <h4 class="metrics-title">🎛️ Decoy-State Intensities</h4>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="muSignal">Signal intensity μ</label>
+                  <button type="button" class="info-button" aria-label="Signal intensity info" data-info="Mean photon number of the signal state. Blank uses the model default. Ntanos et al. 2021 use μ = 0.56 with ν = 0.11 (Photonics 8, 544).">!</button>
+                </div>
+                <input id="muSignal" type="number" min="0.01" max="2" step="0.01" placeholder="default" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="muDecoy">Decoy intensity ν</label>
+                  <button type="button" class="info-button" aria-label="Decoy intensity info" data-info="Mean photon number of the weak decoy state (ν &lt; μ). Blank uses the model default. The vacuum state is the third intensity and is always included.">!</button>
+                </div>
+                <input id="muDecoy" type="number" min="0.001" max="1" step="0.01" placeholder="default" />
+              </div>
+            </div>
+
+            <h4 class="metrics-title">🔒 Per-Pass Finite Key (Lim et al. 2014)</h4>
+            <div class="field-group">
+              <div class="field">
+                <input id="finiteKeyEnabled" type="checkbox" />
+                <label for="finiteKeyEnabled">Enable finite-key analysis</label>
+                <button type="button" class="info-button" aria-label="Finite key info" data-info="Composable finite-key bound for decoy-state BB84 (Lim, Curty, Walenta, Xu, Zbinden, PRA 89, 022307 (2014), Eqs. 1–5), applied per satellite pass — one pass = one block (Islam et al., PRX Quantum 5, 030101 (2024) §III B). Statistical deviations scale as √n while counts scale as n, so short passes keep a smaller fraction of their asymptotic key and below a threshold block size they keep nothing. Decoy-state protocol only.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="finiteKeyFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="epsilonSec">ε_sec (secrecy)</label>
+                  <button type="button" class="info-button" aria-label="Epsilon sec info" data-info="Secrecy parameter of the composable security definition. Total ε = ε_cor + ε_sec. Typical published choice: 1e-10.">!</button>
+                </div>
+                <input id="epsilonSec" type="number" min="1e-20" max="0.1" step="1e-11" value="1e-10" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="epsilonCor">ε_cor (correctness)</label>
+                  <button type="button" class="info-button" aria-label="Epsilon cor info" data-info="Correctness parameter: probability that Alice's and Bob's keys differ after error correction. Typical: 1e-15.">!</button>
+                </div>
+                <input id="epsilonCor" type="number" min="1e-25" max="0.1" step="1e-16" value="1e-15" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="basisBiasQx">Basis bias q_x</label>
+                  <button type="button" class="info-button" aria-label="Basis bias info" data-info="Probability of choosing the key-generating X basis in efficient BB84. The Z basis is used for phase-error estimation. 0.5 = unbiased textbook sifting; a bias towards X raises the key but shrinks the estimation sample.">!</button>
+                </div>
+                <input id="basisBiasQx" type="number" min="0.01" max="0.99" step="0.01" value="0.5" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="pSignal">p(signal)</label>
+                  <button type="button" class="info-button" aria-label="p signal info" data-info="Probability of sending the signal intensity μ. Default 4/21 ≈ 0.1905, the Ntanos 2021 signal:decoy:vacuum ratio 4:1:16.">!</button>
+                </div>
+                <input id="pSignal" type="number" min="0.01" max="0.98" step="0.01" value="0.1905" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="pDecoy">p(decoy)</label>
+                  <button type="button" class="info-button" aria-label="p decoy info" data-info="Probability of sending the decoy intensity ν. The vacuum probability is the remainder 1 − p(signal) − p(decoy). Default 1/21 ≈ 0.0476.">!</button>
+                </div>
+                <input id="pDecoy" type="number" min="0.01" max="0.98" step="0.01" value="0.0476" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="fkBlockFractions">Block-shrinkage fractions</label>
+                  <button type="button" class="info-button" aria-label="Block shrinkage info" data-info="Re-evaluates the key length on f·n counts for each fraction f, i.e. ℓ(f·n) rather than f·ℓ(n) — the cost of a pass cut short by cloud or by a scheduler. Because ℓ is superadditive, ℓ(f·n) ≤ f·ℓ(n), with equality only asymptotically. Comma-separated, e.g. 1.0, 0.75, 0.5. Blank = not computed.">!</button>
+                </div>
+                <input id="fkBlockFractions" type="text" placeholder="e.g. 1.0, 0.75, 0.5" />
+              </div>
+            </div>
+
+            <h4 class="metrics-title">☁️ Cloud Availability (elevation-resolved PCFLOS)</h4>
+            <div class="field-group">
+              <div class="field">
+                <input id="availabilityEnabled" type="checkbox" />
+                <label for="availabilityEnabled">Enable cloud availability</label>
+                <button type="button" class="info-button" aria-label="Cloud availability info" data-info="Applies P_CFLOS(ε) = (1 − N)^√(1 + β² cot²ε) per pass, key-rate weighted (Kauth &amp; Penquite 1967 slant factor; the same geometry ITU-R P.840-8 uses), with N the ERA5 hourly cloud cover for the station. Reported as an UPPER bound on availability. The zenith proxy overstates availability roughly 2× at 20° elevation, which is why the elevation dependence is in the model.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="availabilityFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="availabilityEstimator">Estimator</label>
+                  <button type="button" class="info-button" aria-label="Estimator info" data-info="Expectation = mean of (1 − N)^f(ε) over hours; no free threshold, the defensible default. Threshold = the legacy P(cover &lt; cutoff) count, which treats the ERA5 areal fraction as binary and generally overstates availability. Shown for comparison only.">!</button>
+                </div>
+                <select id="availabilityEstimator">
+                  <option value="expectation" selected>Expectation ⟨(1−N)^f(ε)⟩</option>
+                  <option value="threshold">Threshold P(cover &lt; cutoff)</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="cloudAspectRatio">Cloud aspect ratio β</label>
+                  <button type="button" class="info-button" aria-label="Aspect ratio info" data-info="β = h/(2r) of the cloud field. β = 1 makes the slant factor exactly 1/sin ε; the published cumulus range is 0.6–1.5, so sweep it for the sensitivity band. β = 0 disables the elevation correction (zenith proxy).">!</button>
+                </div>
+                <input id="cloudAspectRatio" type="number" min="0" max="5" step="0.05" value="1.0" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="cloudThresholdPct">Threshold cutoff (%)</label>
+                  <button type="button" class="info-button" aria-label="Cloud threshold info" data-info="Only used by the threshold estimator: cloud cover below this percentage counts the hour as clear.">!</button>
+                </div>
+                <input id="cloudThresholdPct" type="number" min="0" max="100" step="5" value="30" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="cloudYear">ERA5 year</label>
+                  <button type="button" class="info-button" aria-label="Cloud year info" data-info="Reanalysis year the climatology is drawn from. Blank = the year before the simulation epoch.">!</button>
+                </div>
+                <input id="cloudYear" type="number" min="1940" max="2026" step="1" placeholder="epoch − 1" />
+              </div>
+              <div class="field">
+                <input id="cloudNightOnly" type="checkbox" />
+                <label for="cloudNightOnly">Night hours only</label>
+                <button type="button" class="info-button" aria-label="Night only info" data-info="Conditions the cloud statistic on night hours, for a night-only link. The sign of the day/night difference is site- and season-dependent (Eastman &amp; Warren 2014), so this is a knob, not a correction — and the station RANKING can flip even when the mean barely moves.">!</button>
+              </div>
+            </div>
+
+            <h4 class="metrics-title">🎲 Monte Carlo Channel</h4>
+            <div class="field-group">
+              <div class="field">
+                <input id="monteCarloEnabled" type="checkbox" />
+                <label for="monteCarloEnabled">Enable confidence bands</label>
+                <button type="button" class="info-button" aria-label="Monte Carlo info" data-info="Draws channel realizations per accepted sample from the SAME irradiance statistics the deterministic fade margin is a quantile of, and reports the P5/P50/P95 band plus the outage probability. The deterministic scintillation margin and the Rayleigh-averaged pointing fade are stripped from the loss before sampling so the fading is not counted twice. Needs scintillation enabled in the Link Budget panel to have any spread to draw.">!</button>
+              </div>
+            </div>
+            <div class="field-group" id="monteCarloFields">
+              <div class="field">
+                <div class="field-label">
+                  <label for="mcRealizations">Realizations per sample</label>
+                  <button type="button" class="info-button" aria-label="Realizations info" data-info="Channel draws per accepted time sample. 200 is enough for a P5/P95 band; widen tails need more. Cost scales linearly with this × the number of link samples.">!</button>
+                </div>
+                <input id="mcRealizations" type="number" min="1" max="20000" step="50" value="200" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="mcSeed">Seed</label>
+                  <button type="button" class="info-button" aria-label="Seed info" data-info="Fixed by default: a published confidence band that moves between two runs of the same configuration is not a result. Blank = non-reproducible draws.">!</button>
+                </div>
+                <input id="mcSeed" type="number" step="1" value="12345" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="mcBand">Band</label>
+                  <button type="button" class="info-button" aria-label="Band info" data-info="Lower percentile of the reported band; the upper is its mirror and the median is always included. P5/P95 is the usual choice.">!</button>
+                </div>
+                <select id="mcBand">
+                  <option value="5" selected>P5 – P50 – P95</option>
+                  <option value="10">P10 – P50 – P90</option>
+                  <option value="1">P1 – P50 – P99</option>
+                </select>
+              </div>
+            </div>
+            <p class="hint" style="margin-top:.35rem;">⚠️ The draws are i.i.d. per sample, so the band is the distribution of the <em>instantaneous</em> key rate and the outage is a fraction of independent instants, not of pass time — scintillation is temporally correlated on ~1/f_Greenwood. State this wherever the band is published.</p>
+
+            <hr style="margin:1rem 0; border-color:rgba(255,255,255,0.1);">
+            <h3>SKR Time-Series Graphs</h3>
+            <p class="hint" style="margin-bottom:0.75rem;">Compute the full secure key rate time series over the simulated pass using the backend physics engine (decoy-state BB84, Ma et al. 2005). Matches the methodology of Ntanos et al., <em>Photonics</em> 2021, 8(12):544.</p>
+            <button id="btnQKDSeries" type="button" class="btn-primary">Compute SKR Time Series</button>
+            <p id="qkdSeriesStatus" class="hint"></p>
+
+            <ul class="metrics-list" style="margin-top:0.75rem;">
+              <li>
+                <span class="metric-label">
+                  SKR vs Time
+                  <button type="button" class="info-button" aria-label="SKR vs time info" data-info="Secure Key Rate as a function of time during satellite passes. Non-zero only when the link is established (elevation &gt; min threshold). Matches Fig. 6 of Ntanos et al. 2021.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="skrTime">Show graph</button>
+              </li>
+              <li>
+                <span class="metric-label">
+                  QBER vs Time
+                  <button type="button" class="info-button" aria-label="QBER vs time info" data-info="Quantum Bit Error Rate as a function of time. Low QBER (&lt;11%) is required for a positive SKR.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="qberTime">Show graph</button>
+              </li>
+              <li>
+                <span class="metric-label">
+                  SKR vs Elevation
+                  <button type="button" class="info-button" aria-label="SKR vs elevation info" data-info="Secure Key Rate as a function of elevation angle. Higher elevation means shorter path, less loss, and higher SKR. Matches Fig. 4–5 of Ntanos et al. 2021.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="skrVsElevation">Show graph</button>
+              </li>
+              <li>
+                <span class="metric-label">
+                  SKR vs Slant Range
+                  <button type="button" class="info-button" aria-label="SKR vs distance info" data-info="Secure Key Rate as a function of satellite-to-ground slant range. SKR drops with increasing distance due to beam divergence and atmospheric path length.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="skrVsDistance">Show graph</button>
+              </li>
+              <li>
+                <span class="metric-label">
+                  SKR confidence band (Monte Carlo)
+                  <button type="button" class="info-button" aria-label="SKR band info" data-info="Monte Carlo P5–P95 band with the median, and the deterministic curve overlaid for reference. The median sits ABOVE the deterministic curve by construction: the deterministic path budgets the p0 scintillation quantile as a margin. Requires the Monte Carlo option above.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="skrBand">Show graph</button>
+              </li>
+              <li>
+                <span class="metric-label">
+                  Outage probability vs Time
+                  <button type="button" class="info-button" aria-label="Outage info" data-info="Fraction of channel realizations delivering zero key at each instant. i.i.d. per sample, so this is a fraction of independent instants and carries no information about fade duration. Requires the Monte Carlo option above.">!</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="outageTime">Show graph</button>
+              </li>
+            </ul>
+
+            <div id="mcSummary" style="display:none; margin-top:.75rem;"></div>
+          </section>
+
+          <section class="panel-section" data-section="paper" hidden>
+            <div class="section-header">
+              <h2>📄 Paper — Ntanos et al. 2021</h2>
+              <p class="section-desc">Reproduce <em>“LEO Satellites Constellation-to-Ground QKD Links: Greek QCI Paradigm”</em>, Photonics 8, 544 — decoy-state BB84 downlink over the Skinakas / Helmos / Cholomondas OGS.</p>
+            </div>
+            <div id="paperPresetInfo" class="paper-preset-info hint" style="font-size:12px;line-height:1.5;margin-bottom:10px;">Loading paper preset…</div>
+            <button type="button" id="btnPaperApply" class="btn-action btn-glow" style="width:100%;margin-bottom:12px;">Apply paper scenario to simulator</button>
+            <div class="paper-fig-buttons" style="display:flex;flex-direction:column;gap:8px;">
+              <button type="button" class="btn-action btn-paper-fig" data-fig="fig2">Fig 2 — Loss &amp; SKR vs distance / aperture</button>
+              <button type="button" class="btn-action btn-paper-fig" data-fig="fig3">Fig 3 — SKR vs solar radiance</button>
+              <button type="button" class="btn-action btn-paper-fig" data-fig="fig5">Fig 5 — Single pass over Helmos</button>
+              <button type="button" class="btn-action btn-paper-fig" data-fig="fig67">Fig 6/7 &amp; Table 1 — 10-sat constellation</button>
+            </div>
+            <p id="paperStatus" class="graph-hint" style="margin-top:10px;"></p>
+            <p class="graph-hint" style="margin-top:6px;opacity:.8;">Yearly totals are extrapolated from a self-generated SSO constellation (STK ephemerides in the paper are not public); absolute values are indicative — inter-station ratios and per-pass physics are the faithful part.</p>
+          </section>
+
+          <section class="panel-section" data-section="study" hidden>
+            <div class="section-header">
+              <h2>🛰️ Constellation Study</h2>
+              <p class="section-desc">A Walker constellation over a ground-station network, <strong>with contention</strong>: one optical terminal per satellite and one telescope per station mean only a matching of the visible pairs is servable.</p>
+            </div>
+
+            <div class="info-message">
+              <strong>Base configuration:</strong> every satellite–station pair is evaluated through the same physics path as <em>Compute SKR Time Series</em> — the Optics, Link Budget, Atmosphere and QKD panels, including the finite-key, cloud-availability and Monte Carlo switches under <em>QKD → Advanced Analysis</em>. Turn finite key on there to get the distillable-key columns and the inversion test.
+            </div>
+
+            <h3>Constellation</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyWalkerT">Satellites T</label>
+                  <button type="button" class="info-button" aria-label="Walker T info" data-info="Total number of satellites in the Walker-Delta pattern T/P/F (Walker, J. Br. Interplanet. Soc. 37, 559 (1984)). Must be divisible by the number of planes P.">!</button>
+                </div>
+                <input id="studyWalkerT" type="number" min="1" max="64" step="1" value="6" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyWalkerP">Planes P</label>
+                  <button type="button" class="info-button" aria-label="Walker P info" data-info="Number of equally spaced orbital planes. T must be divisible by P, otherwise satellites would be silently dropped.">!</button>
+                </div>
+                <input id="studyWalkerP" type="number" min="1" max="16" step="1" value="3" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyWalkerF">Phasing F</label>
+                  <button type="button" class="info-button" aria-label="Walker F info" data-info="Relative phasing between adjacent planes, 0 ≤ F ≤ P−1. Sets the in-plane offset that determines how evenly the constellation covers a latitude band.">!</button>
+                </div>
+                <input id="studyWalkerF" type="number" min="0" max="15" step="1" value="1" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyAltitude">Altitude (km)</label>
+                  <button type="button" class="info-button" aria-label="Study altitude info" data-info="Circular altitude shared by every satellite. All members must share a semi-major axis so the scheduler sees one common time grid — interpolating a link budget across a re-grid is exactly the kind of quiet error a reviewer cannot see. Blank = derived from the Orbit panel.">!</button>
+                </div>
+                <input id="studyAltitude" type="number" min="200" max="2000" step="10" value="500" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyInclination">Inclination (°)</label>
+                  <button type="button" class="info-button" aria-label="Study inclination info" data-info="Inclination shared by every plane. ~97–98° is sun-synchronous at LEO; 53° favours mid-latitudes.">!</button>
+                </div>
+                <input id="studyInclination" type="number" min="0" max="180" step="0.1" value="97.5" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyRaanOffset">RAAN offset (°)</label>
+                  <button type="button" class="info-button" aria-label="RAAN offset info" data-info="Rotates the whole pattern in right ascension. Shifts which longitudes the passes fall over within the propagation window.">!</button>
+                </div>
+                <input id="studyRaanOffset" type="number" min="-360" max="360" step="1" value="0" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyOrbits">Window (orbits)</label>
+                  <button type="button" class="info-button" aria-label="Study window info" data-info="Revolutions propagated. Cost is T satellites × N stations × samples, so start small: 3 orbits over 4 stations with 6 satellites is already 24 link evaluations.">!</button>
+                </div>
+                <input id="studyOrbits" type="number" min="1" max="50" step="1" value="3" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studySamples">Samples per orbit</label>
+                  <button type="button" class="info-button" aria-label="Study samples info" data-info="Time resolution of the shared grid. The scheduler works interval by interval, so this also sets the granularity at which a preemptive policy may switch targets.">!</button>
+                </div>
+                <input id="studySamples" type="number" min="30" max="600" step="10" value="120" />
+              </div>
+            </div>
+
+            <h3>Ground-Station Network</h3>
+            <div class="field">
+              <div class="field-label">
+                <label for="studyStations">Stations (multi-select)</label>
+                <button type="button" class="info-button" aria-label="Study stations info" data-info="Ctrl/Cmd-click to select several. Each station is one node with one telescope (unless you raise the telescope count below), so adding stations both adds capacity and creates contention for the same satellites.">!</button>
+              </div>
+              <select id="studyStations" multiple size="7" style="width:100%"></select>
+            </div>
+            <div style="display:flex; gap:.5rem; margin:.4rem 0 .8rem;">
+              <button id="btnStudySelectEurope" type="button" class="btn-action btn-sm">Select European OGS</button>
+              <button id="btnStudySelectAll" type="button" class="btn-action btn-sm">Select all</button>
+              <button id="btnStudyClearSel" type="button" class="btn-action btn-sm">Clear</button>
+            </div>
+
+            <h3>Contention</h3>
+            <div class="field-group">
+              <div class="field">
+                <input id="studyPolicyContact" type="checkbox" checked />
+                <label for="studyPolicyContact">Contact (non-preemptive)</label>
+                <button type="button" class="info-button" aria-label="Contact policy info" data-info="Whole passes only: once a link is taken it is held to the end of the contact. Weighted interval scheduling by greedy selection (Kleinberg &amp; Tardos 2005 §6.1 gives the DP bound reported alongside it). This is the operationally realistic policy.">!</button>
+              </div>
+              <div class="field">
+                <input id="studyPolicyPreemptive" type="checkbox" checked />
+                <label for="studyPolicyPreemptive">Preemptive (matching per interval)</label>
+                <button type="button" class="info-button" aria-label="Preemptive policy info" data-info="Re-solves an optimal bipartite assignment every interval (Kuhn 1955 / Munkres 1957), so a satellite may switch station mid-pass. Upper bound on ASYMPTOTIC key — and not an upper bound on distillable key, because the switching shatters finite-key blocks.">!</button>
+              </div>
+              <div class="field">
+                <input id="studyPolicyIndependent" type="checkbox" />
+                <label for="studyPolicyIndependent">Independent (naive N×M sum)</label>
+                <button type="button" class="info-button" aria-label="Independent policy info" data-info="Sums every visible pair as if each had its own terminal. Unrealisable — reported only as the reference the contention-aware totals are measured against, and the reason the marginal value of a station looks constant when contention is ignored.">!</button>
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="studySatTerminals">Terminals per satellite</label>
+                  <button type="button" class="info-button" aria-label="Sat terminals info" data-info="Optical terminals aboard each satellite, i.e. how many stations it can serve at once. Above 1 the preemptive policy reduces b-matching to matching by replicating rows and is reported as a lower bound on the relaxation, not the exact optimum.">!</button>
+                </div>
+                <input id="studySatTerminals" type="number" min="1" max="8" step="1" value="1" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyGsTerminals">Telescopes per station</label>
+                  <button type="button" class="info-button" aria-label="GS terminals info" data-info="Independent telescopes at each ground station, i.e. how many satellites it can track at once.">!</button>
+                </div>
+                <input id="studyGsTerminals" type="number" min="1" max="8" step="1" value="1" />
+              </div>
+            </div>
+
+            <h3>Marginal-Value Curve</h3>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyMarginalOver">Add elements one at a time</label>
+                  <button type="button" class="info-button" aria-label="Marginal over info" data-info="Adds stations (or satellites) in greedy order and records what each one contributed to the network total. Under contention that gain saturates, and where it saturates is the result. O(n²) schedule evaluations — keep n modest.">!</button>
+                </div>
+                <select id="studyMarginalOver">
+                  <option value="" selected>Off</option>
+                  <option value="stations">Over stations</option>
+                  <option value="satellites">Over satellites</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyMarginalPolicy">Evaluated under</label>
+                  <button type="button" class="info-button" aria-label="Marginal policy info" data-info="Contact is the meaningful choice: under the independent policy every marginal gain equals the element's standalone value by construction, so that policy cannot answer this question at all.">!</button>
+                </div>
+                <select id="studyMarginalPolicy">
+                  <option value="contact" selected>Contact</option>
+                  <option value="preemptive">Preemptive</option>
+                  <option value="independent">Independent</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyMarginalMetric">Metric</label>
+                  <button type="button" class="info-button" aria-label="Marginal metric info" data-info="Which total the curve tracks. Finite = distillable key after the Lim 2014 correction (requires finite key enabled); asymptotic = the infinite-block idealisation.">!</button>
+                </div>
+                <select id="studyMarginalMetric">
+                  <option value="finite" selected>Finite (distillable)</option>
+                  <option value="asymptotic">Asymptotic</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="studyMarginalOrder">Order</label>
+                  <button type="button" class="info-button" aria-label="Marginal order info" data-info="Greedy = best next element at each step (the order whose knee is meaningful for a monotone submodular objective, Nemhauser, Wolsey &amp; Fisher 1978). Given = the selection order. Standalone = ranked by isolated value.">!</button>
+                </div>
+                <select id="studyMarginalOrder">
+                  <option value="greedy" selected>Greedy</option>
+                  <option value="given">As selected</option>
+                  <option value="standalone">Standalone value</option>
+                </select>
+              </div>
+            </div>
+
+            <button id="btnRunStudy" type="button" class="btn-action btn-glow" style="width:100%;margin-top:10px;">Run constellation study</button>
+            <p id="studyStatus" class="graph-hint" style="margin-top:8px;"></p>
+            <button id="btnShowStudyResults" type="button" class="btn-action btn-sm" style="margin-top:4px;display:none;">Show last results</button>
+          </section>
+
+          <section class="panel-section" data-section="help" hidden>
+            <div class="section-header">
+              <h2>❓ Help & Documentation</h2>
+              <p class="section-desc">Reference guides and troubleshooting</p>
+            </div>
+            <nav class="help-nav" aria-label="Help topics">
+              <button type="button" data-help-topic="overview">Overview &amp; Quick Start</button>
+              <button type="button" data-help-topic="orbits">Orbits (elements, epochs)</button>
+              <button type="button" data-help-topic="resonance">Repeating ground track (k:j)</button>
+              <button type="button" data-help-topic="walker">Walker constellations</button>
+              <button type="button" data-help-topic="optimization">Optimizer (adaptive random search)</button>
+              <button type="button" data-help-topic="propagation">Propagation &amp; J2 model</button>
+              <button type="button" data-help-topic="optics">Optical Link Budget</button>
+              <button type="button" data-help-topic="atmosphere">Atmospheric Models</button>
+              <button type="button" data-help-topic="qkd">QKD Theory &amp; Implementation</button>
+              <button type="button" data-help-topic="backend">Backend API &amp; TLE provider</button>
+              <button type="button" data-help-topic="workers">Web Workers &amp; precomputation</button>
+              <button type="button" data-help-topic="troubleshooting">Troubleshooting</button>
+            </nav>
+            <div class="help-content">
+              <article id="help-overview" hidden>
+                <h3>QKD Sat-Link Simulator - Overview</h3>
+                <p>This simulator combines orbital mechanics, optical link budget calculations, atmospheric modeling, and quantum key distribution (QKD) theory to predict secure key generation rates for satellite-to-ground quantum communication links across Europe.</p>
+                
+                <h4>Key Features</h4>
+                <ul>
+                  <li><strong>Orbital Design:</strong> Configure Keplerian orbital elements with resonance optimization</li>
+                  <li><strong>Constellation Planning:</strong> Design Walker Delta patterns for multi-satellite coverage</li>
+                  <li><strong>Link Budget:</strong> Calculate geometric and atmospheric losses</li>
+                  <li><strong>Turbulence Modeling:</strong> Multiple atmospheric models (Hufnagel-Valley, Bufton, Greenwood)</li>
+                  <li><strong>QKD Performance:</strong> Estimate QBER and secure key rates for various protocols</li>
+                  <li><strong>Real-time Visualization:</strong> Interactive 2D map and 3D globe views</li>
+                </ul>
+                
+                <h4>Quick Start Guide</h4>
+                <ol>
+                  <li><strong>Configure Orbit:</strong> Set orbital parameters in the "Orbit" panel</li>
+                  <li><strong>Add Ground Stations:</strong> Create optical ground stations in the "Stations" panel</li>
+                  <li><strong>Set Optical Parameters:</strong> Configure telescope apertures and wavelength in "Optics"</li>
+                  <li><strong>Choose Atmospheric Model:</strong> Select turbulence model in "Atmosphere" panel</li>
+                  <li><strong>Configure QKD:</strong> Set QKD protocol and detector parameters in "QKD" panel</li>
+                  <li><strong>Run Simulation:</strong> Use timeline controls to visualize link performance over time</li>
+                  <li><strong>Analyze Results:</strong> View metrics in "Analytics" panel and export data</li>
+                </ol>
+              </article>
+              <article id="help-orbits">
+                <h3>Orbits</h3>
+                <p>The simulator represents orbits using classical Keplerian elements (a, e, i, Ω, ω, M). The epoch input sets the reference time at which mean anomaly and RAAN/argument are defined. Semi-major axis is provided in kilometers. The internal propagation converts mean anomaly to eccentric anomaly using Newton's method and then to ECI coordinates for rendering and metrics.</p>
+              </article>
+              <article id="help-resonance" hidden>
+                <h3>Repeating ground track (k:j)</h3>
+                <p>A repeating ground track is defined by one integer pair: k satellite revolutions in j sidereal days. Enter k and j and the semi-major axis is solved directly — there is no search or tolerance. When J2 is enabled the solver uses the J2-corrected repeat condition k·(ω_E − Ω̇) = j·(n + Ṁ + ω̇) (Vallado 2013), so nodal regression, apsidal precession and the mean-anomaly drift are accounted for and the track actually closes; with J2 off it reduces to the Keplerian period (j/k)·T_sidereal. The simulation then spans exactly one full repeat cycle (k revolutions). For circular orbits the track closes to within metres; small eccentricity leaves a sub-kilometre residual from J2 apsidal drift.</p>
+              </article>
+              <article id="help-walker" hidden>
+                <h3>Walker constellation generation</h3>
+                <p>Walker Δ patterns are created by distributing T satellites across P planes with phase F. The generator computes RAAN offsets and mean anomaly phasing to place satellites evenly across planes and along-track. Outputs are simple element sets that the propagation engine uses for visualization.</p>
+              </article>
+              <article id="help-optimization" hidden>
+                <h3>Optimizer</h3>
+                <p>The optimizer uses an adaptive random-search heuristic. It mutates candidate constellations (perturbing RAAN, mean anomaly, or orbital elements) and evaluates a revisit-time metric against user-defined control points. The evaluation uses precomputed timelines for satellite positions to avoid per-frame propagation overhead. The best solution is stored in the state and can be applied to the active orbit.</p>
+              </article>
+              <article id="help-propagation" hidden>
+                <h3>Propagation and J2</h3>
+                <p>Propagation is implemented using classical Kepler motion with an added J2 secular approximation: RAAN and argument of perigee secular rates are applied to each sample to simulate Earth's oblateness effects efficiently. For high fidelity needs a full SGP4 engine would be preferable, but the current approach balances performance and realism for planning tasks.</p>
+              </article>
+              <article id="help-backend" hidden>
+                <h3>Backend / TLE provider</h3>
+                <p>The backend exposes an API that fetches and caches TLE groups from CelesTrak. Requests are cached in-memory with a TTL to avoid repeated remote fetches. The frontend can request `/api/tles/{group}` to retrieve TLE sets for overlaying constellations.</p>
+              </article>
+              <article id="help-workers" hidden>
+                <h3>Web Workers &amp; precomputation</h3>
+                <p>Heavy propagation work is moved to Web Workers (optional). Workers accept batches of elements and timeline parameters, propagate each satellite, and stream partial results back to the main thread to render incremental polylines. Using transferable arrays and a worker pool reduces UI freezes for large constellations.</p>
+              </article>
+              <article id="help-optics" hidden>
+                <h3>Optical Link Budget</h3>
+                <p>The link budget model accounts for all major loss mechanisms in free-space optical communication:</p>
+                <ul>
+                  <li><strong>Geometric Loss:</strong> Free-space path loss scales as (4πR/λ)², where R is range and λ is wavelength</li>
+                  <li><strong>Beam Divergence:</strong> Diffraction-limited divergence θ ≈ λ/D, where D is transmitter aperture</li>
+                  <li><strong>Atmospheric Extinction:</strong> Molecular absorption and aerosol scattering along slant path</li>
+                  <li><strong>Turbulence Losses:</strong> Scintillation and beam wander from refractive index fluctuations</li>
+                  <li><strong>Pointing Loss:</strong> Misalignment between transmit beam and receiver aperture</li>
+                </ul>
+                <p><strong>Key Parameters:</strong></p>
+                <ul>
+                  <li>Satellite aperture: Larger reduces divergence, improving link budget</li>
+                  <li>Ground aperture: Larger collecting area captures more photons</li>
+                  <li>Wavelength: Trade-off between detector efficiency, atmospheric transmission, and background</li>
+                  <li>Elevation angle: Higher angles reduce atmospheric path length</li>
+                </ul>
+              </article>
+              <article id="help-atmosphere" hidden>
+                <h3>Atmospheric Turbulence Models</h3>
+                <p>Three atmospheric turbulence models are available, each with different data requirements and accuracy:</p>
+                
+                <h4>Hufnagel-Valley 5/7</h4>
+                <p>Classic parametric model combining surface Cn²(0) with high-altitude wind:</p>
+                <p>Cn²(h) = 0.00594(v_wind/27)² (10⁻⁵h)¹⁰ exp(-h/1000) + 2.7×10⁻¹⁶ exp(-h/1500) + Cn²(0)exp(-h/100)</p>
+                <ul>
+                  <li><strong>Inputs:</strong> Surface Cn² (day/night), wind speed at 300 hPa from Open-Meteo</li>
+                  <li><strong>Outputs:</strong> Fried parameter r₀, isoplanatic angle θ₀, Greenwood frequency fG</li>
+                  <li><strong>Best for:</strong> General-purpose planning when detailed site data unavailable</li>
+                </ul>
+                
+                <h4>Bufton Boundary-Layer Model</h4>
+                <p>Empirical model emphasizing low-altitude turbulence with meteorological inputs:</p>
+                <ul>
+                  <li><strong>Inputs:</strong> Wind components at multiple levels (850, 500, 300 hPa), temperature profiles</li>
+                  <li><strong>Features:</strong> Better representation of boundary layer, wind shear effects</li>
+                  <li><strong>Best for:</strong> Sites with strong boundary-layer turbulence, detailed weather data available</li>
+                </ul>
+                
+                <h4>Greenwood Lidar-Inspired Model</h4>
+                <p>Piecewise model targeting adaptive optics design:</p>
+                <ul>
+                  <li><strong>Inputs:</strong> Wind profiles at 200, 300 hPa, temperature, relative humidity</li>
+                  <li><strong>Focus:</strong> Temporal bandwidth requirements for AO correction</li>
+                  <li><strong>Best for:</strong> Systems with adaptive optics, when AO bandwidth is critical design parameter</li>
+                </ul>
+                
+                <h4>Weather Data Integration</h4>
+                <p>All models integrate real-time data from Open-Meteo API:</p>
+                <ul>
+                  <li>High-altitude wind vectors (200-850 hPa)</li>
+                  <li>Temperature and pressure profiles</li>
+                  <li>Relative humidity for moisture-dependent losses</li>
+                  <li>Planetary boundary layer height (future)</li>
+                </ul>
+                <p><strong>Error Handling:</strong> The system validates API responses, provides fallback to climatological averages if fetches fail, and logs all weather data requests for debugging.</p>
+              </article>
+              <article id="help-qkd" hidden>
+                <h3>Quantum Key Distribution (QKD) Theory &amp; Implementation</h3>
+                <p>The QKD module simulates secure key generation for satellite-to-ground quantum links using various protocols:</p>
+                
+                <h4>BB84 Protocol</h4>
+                <p>Prepare-and-measure protocol using four non-orthogonal states:</p>
+                <ul>
+                  <li><strong>Encoding:</strong> Polarization or phase encoding of single photons</li>
+                  <li><strong>Security:</strong> No-cloning theorem ensures eavesdropping detection</li>
+                  <li><strong>Key Rate:</strong> R_secure ≈ R_raw × [1 - h(QBER)] - leak_EC, where h is binary entropy</li>
+                </ul>
+                
+                <h4>E91 Protocol</h4>
+                <p>Entanglement-based protocol using Bell state measurements:</p>
+                <ul>
+                  <li><strong>Source:</strong> Entangled photon pairs generated on satellite</li>
+                  <li><strong>Security:</strong> Bell inequality violation proves security</li>
+                  <li><strong>Advantages:</strong> Reference frame independent, inherent security verification</li>
+                </ul>
+                
+                <h4>Continuous Variable QKD</h4>
+                <p>Uses coherent states and homodyne detection:</p>
+                <ul>
+                  <li><strong>Detection:</strong> Homodyne or heterodyne measurement</li>
+                  <li><strong>Advantages:</strong> Higher data rates, compatible with telecom components</li>
+                  <li><strong>Challenges:</strong> More sensitive to channel loss and noise</li>
+                </ul>
+                
+                <h4>Key Performance Metrics</h4>
+                <ul>
+                  <li><strong>QBER (Quantum Bit Error Rate):</strong> Fraction of erroneous bits, must be below threshold (~11% for BB84)</li>
+                  <li><strong>Raw Key Rate:</strong> Coincidence rate before error correction and privacy amplification</li>
+                  <li><strong>Secure Key Rate:</strong> Final rate after all post-processing, accounting for finite-key effects</li>
+                  <li><strong>Channel Loss:</strong> Total link loss including geometric, atmospheric, and detector inefficiencies</li>
+                </ul>
+                
+                <h4>Implementation Details</h4>
+                <p>The simulator integrates QKD calculations with optical link budget:</p>
+                <ol>
+                  <li>Calculate channel transmittance η from link budget (geometric + atmospheric losses)</li>
+                  <li>Compute detection rate: R_detect = R_source × η × η_detector</li>
+                  <li>Add noise: dark counts, background photons, detector afterpulsing</li>
+                  <li>Estimate QBER from noise and channel errors</li>
+                  <li>Apply sifting efficiency (~0.5 for BB84)</li>
+                  <li>Calculate secure key rate using finite-key security formulas</li>
+                </ol>
+                
+                <p><strong>Note:</strong> The simulator includes realistic effects such as finite-key corrections, parameter estimation overhead, and detection dead time.</p>
+              </article>
+              <article id="help-troubleshooting" hidden>
+                <h3>Troubleshooting</h3>
+                
+                <h4>Common Issues and Solutions</h4>
+                
+                <h5>Weather Data Fetch Failures</h5>
+                <p><strong>Symptoms:</strong> Weather overlay doesn't appear, error messages about Open-Meteo API</p>
+                <p><strong>Solutions:</strong></p>
+                <ul>
+                  <li>Check browser console for detailed error messages (F12)</li>
+                  <li>Verify internet connectivity</li>
+                  <li>Try again after a few minutes (API rate limits)</li>
+                  <li>Use fallback climatological values if persistent</li>
+                </ul>
+                
+                <h5>3D View Not Rendering</h5>
+                <p><strong>Symptoms:</strong> Blank 3D panel or error message</p>
+                <p><strong>Solutions:</strong></p>
+                <ul>
+                  <li>Ensure WebGL is enabled in browser (chrome://flags)</li>
+                  <li>Update graphics drivers</li>
+                  <li>Try different browser (Chrome, Firefox, Edge all supported)</li>
+                  <li>Check browser console for WebGL errors</li>
+                </ul>
+                
+                <h5>Ground Stations Not Saving</h5>
+                <p><strong>Symptoms:</strong> Added stations disappear on page reload</p>
+                <p><strong>Solutions:</strong></p>
+                <ul>
+                  <li>Check if backend server is running (python run_app.py)</li>
+                  <li>Verify /api/ogs endpoint is accessible</li>
+                  <li>Clear browser cache and try again</li>
+                  <li>Check backend logs for database errors</li>
+                </ul>
+                
+                <h5>Slow Performance with Large Constellations</h5>
+                <p><strong>Symptoms:</strong> UI freezes or lags with many satellites</p>
+                <p><strong>Solutions:</strong></p>
+                <ul>
+                  <li>Enable Web Workers in optimization panel</li>
+                  <li>Reduce number of samples per orbit</li>
+                  <li>Use fewer satellites in Walker constellation</li>
+                  <li>Close other browser tabs to free memory</li>
+                </ul>
+                
+                <h4>Debug Mode</h4>
+                <p>Open browser console (F12) to see detailed debug messages including:</p>
+                <ul>
+                  <li>API request/response logs</li>
+                  <li>Propagation calculation checkpoints</li>
+                  <li>State changes and user interactions</li>
+                  <li>Error stack traces</li>
+                </ul>
+                
+                <h4>Reporting Bugs</h4>
+                <p>When reporting issues, please include:</p>
+                <ol>
+                  <li>Browser and version</li>
+                  <li>Operating system</li>
+                  <li>Steps to reproduce</li>
+                  <li>Console error messages</li>
+                  <li>Screenshots if applicable</li>
+                </ol>
+              </article>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Adjust panel width" tabindex="0"></div>
+
+      <div class="visualization-container">
+
+        <div class="view-grid" id="viewGrid" data-active-view="3d">
+          <div id="threeContainer" class="view-pane view-3d">
+            <canvas id="threeCanvas" class="globe-canvas"></canvas>
+            
+          </div>
+          <div id="mapContainer" class="view-pane view-2d">
+            
+          </div>
+        </div>
+
+        <div class="timeline-panel">
+          <div class="timeline-controls">
+            <div class="scene-mode-control">
+              <label for="sceneModeSelect">Mode</label>
+              <select id="sceneModeSelect" class="speed-select">
+                <option value="orbit" selected>Orbit</option>
+                <option value="helio">Sun-centred</option>
+              </select>
+            </div>
+            <div class="helio-controls" id="helioControls" style="display:none;">
+              <label for="helioInterval">Interval</label>
+              <select id="helioInterval" class="speed-select">
+                <option value="3600">1 h</option>
+                <option value="86400" selected>1 day</option>
+                <option value="604800">1 week</option>
+                <option value="31536000">1 year</option>
+              </select>
+              <label for="helioStep">Step</label>
+              <select id="helioStep" class="speed-select">
+                <option value="300">5 min</option>
+                <option value="600">10 min</option>
+                <option value="3600" selected>1 h</option>
+                <option value="7200">2 h</option>
+                <option value="86400">1 day</option>
+              </select>
+              <span id="helioSampleCount" class="info-value" style="font-size:0.75rem;opacity:0.7;"></span>
+            </div>
+            <button id="btnPlay" class="time-btn" title="Play">▶</button>
+            <button id="btnPause" class="time-btn" title="Pause">⏸</button>
+            <button id="btnStepBack" class="time-btn" title="Step back">⏪</button>
+            <button id="btnStepForward" class="time-btn" title="Step forward">⏩</button>
+            <button id="btnResetTime" class="time-btn" title="Reset">↺</button>
+            <div class="speed-control">
+              <label for="timeWarp">Speed</label>
+              <select id="timeWarp" class="speed-select">
+                <option value="1">×1</option>
+                <option value="5">×5</option>
+                <option value="10">×10</option>
+                <option value="30">×30</option>
+                <option value="60" selected>×60</option>
+                <option value="120">×120</option>
+                <option value="300">×300</option>
+                <option value="600">×600</option>
+                <option value="900">×900</option>
+                <option value="1800">×1800</option>
+                <option value="3600">×3600</option>
+              </select>
+            </div>
+          </div>
+          
+          <input id="timeSlider" class="time-slider" type="range" min="0" max="1" step="1" value="0" />
+          
+          <div class="timeline-info">
+            <div class="info-item">
+              <span class="info-label">Time:</span>
+              <span id="timeLabel" class="info-value">0 s</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Elevation:</span>
+              <span id="elevationLabel" class="info-value">--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Loss:</span>
+              <span id="lossLabel" class="info-value">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="stationDialog" class="station-dialog">
+    <form method="dialog" class="dialog-content">
+      <div class="dialog-header dialog-drag-handle">
+        <h2>New ground station</h2>
+      </div>
+      <label>Name<input id="stationName" required /></label>
+      <label>Latitude (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" placeholder="Enter or pick from map" required /></label>
+      <label>Longitude (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" placeholder="Enter or pick from map" required /></label>
+      <label>Aperture (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+      <label>Altitude (m MSL)<input id="stationAltitude" type="number" min="0" max="9000" step="1" value="0" /></label>
+      <div class="station-picker-actions">
+        <button id="stationPickOnMap" type="button">Pick on map</button>
+        <p id="stationPickHint" class="station-pick-hint" hidden>Click the map to set the location.</p>
+      </div>
+      <menu>
+        <button id="stationCancel" type="button">Cancel</button>
+        <button id="stationSave" value="default">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <template id="stationOptionTemplate">
+    <option></option>
+  </template>
+
+  <dialog id="graphModal" class="graph-dialog" aria-labelledby="graphModalTitle">
+    <div class="graph-dialog-header">
+      <h3 id="graphModalTitle">Graph</h3>
+      <div class="graph-dialog-actions">
+        <button id="resetZoomBtn" type="button" class="btn-action btn-sm" title="Reset zoom">⟳ Reset Zoom</button>
+        <button id="closeGraphModal" type="button" class="btn-action btn-sm btn-close-modal" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="modal-chart-container">
+      <div id="modalChartCanvas"></div>
+    </div>
+    <p class="graph-hint">Drag to zoom · Hold Shift + drag to pan · Double-click to reset</p>
+  </dialog>
+
+  <dialog id="linkMarginDialog" class="graph-dialog lm-study-dialog" aria-labelledby="linkMarginTitle">
+    <div class="graph-dialog-header">
+      <h3 id="linkMarginTitle">FSO Link Margin Study</h3>
+      <div class="graph-dialog-actions">
+        <button id="resetLmZoom" type="button" class="btn-action btn-sm" title="Reset zoom">⟳ Reset Zoom</button>
+        <button id="closeLinkMarginDialog" type="button" class="btn-action btn-sm btn-close-modal" title="Close">✕</button>
+      </div>
+    </div>
+    <div id="linkMarginGrid" class="lm-chart-grid"></div>
+    <p class="graph-hint">Scroll to zoom · Click + drag to pan · Click legend to toggle elevation</p>
+  </dialog>
+
+  <dialog id="paperDialog" class="graph-dialog lm-study-dialog" aria-labelledby="paperDialogTitle">
+    <div class="graph-dialog-header">
+      <h3 id="paperDialogTitle">Paper figure</h3>
+      <div class="graph-dialog-actions">
+        <button id="closePaperDialog" type="button" class="btn-action btn-sm btn-close-modal" title="Close">✕</button>
+      </div>
+    </div>
+    <div id="paperGrid" class="lm-chart-grid"></div>
+    <div id="paperTable" style="overflow-x:auto;"></div>
+    <p class="graph-hint">Reproduction of Ntanos et al., Photonics 2021, 8, 544 · Scroll to zoom · drag to pan</p>
+  </dialog>
+
+  <dialog id="studyDialog" class="graph-dialog lm-study-dialog" aria-labelledby="studyDialogTitle">
+    <div class="graph-dialog-header">
+      <h3 id="studyDialogTitle">Constellation study</h3>
+      <div class="graph-dialog-actions">
+        <button id="closeStudyDialog" type="button" class="btn-action btn-sm btn-close-modal" title="Close">✕</button>
+      </div>
+    </div>
+    <div id="studyGrid" class="lm-chart-grid"></div>
+    <div id="studyTable" style="overflow-x:auto;"></div>
+    <p class="graph-hint">Contention-aware totals · bound chain: contact greedy ≤ contact OPT ≤ min(sat, GS) bound ≤ preemptive ≤ independent</p>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.4/dist/satellite.min.js" crossorigin="anonymous"></script>
+  <script type="module" src="/static/utils.js"></script>
+  <script type="module" src="/static/simulation.js"></script>
+  <script type="module" src="/static/ui.js"></script>
+  <script type="module">
+    import { initSettingsUI } from '/static/settings_ui.js';
+    initSettingsUI();
+  </script>
+  <script type="module" src="/static/main.js"></script>
+</script>
+
+</body>
+</html>

@@ -1,0 +1,280 @@
+[
+  {
+    "id": "tenerife",
+    "name": "Teide OGS - ESA (ES)",
+    "lat": 28.3,
+    "lon": -16.509,
+    "altitude_m": 2390,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "tenerife2",
+    "name": "La Palma Roque - ORM (ES)",
+    "lat": 28.761,
+    "lon": -17.89,
+    "altitude_m": 2326,
+    "aperture_m": 2.0,
+    "builtin": true
+  },
+  {
+    "id": "dlr-calar-alto",
+    "name": "Calar Alto OGS - DLR (ES)",
+    "lat": 37.224,
+    "lon": -2.546,
+    "altitude_m": 2168,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "grasse",
+    "name": "Observatoire Côte d'Azur (FR)",
+    "lat": 43.754,
+    "lon": 6.92,
+    "altitude_m": 1270,
+    "aperture_m": 1.54,
+    "builtin": true
+  },
+  {
+    "id": "toulouse",
+    "name": "CNES Toulouse Space Centre (FR)",
+    "lat": 43.604,
+    "lon": 1.444,
+    "altitude_m": 150,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "matera",
+    "name": "Matera MLRO - ASI (IT)",
+    "lat": 40.649,
+    "lon": 16.704,
+    "altitude_m": 537,
+    "aperture_m": 1.5,
+    "builtin": true
+  },
+  {
+    "id": "vienna",
+    "name": "Vienna Observatory (AT)",
+    "lat": 48.248,
+    "lon": 16.357,
+    "altitude_m": 240,
+    "aperture_m": 0.8,
+    "builtin": true
+  },
+  {
+    "id": "dlr-oberpfaffenhofen",
+    "name": "DLR OGS Oberpfaffenhofen (DE)",
+    "lat": 48.084,
+    "lon": 11.28,
+    "altitude_m": 600,
+    "aperture_m": 0.4,
+    "builtin": true
+  },
+  {
+    "id": "zimmerwald",
+    "name": "Zimmerwald AIUB (CH)",
+    "lat": 46.877,
+    "lon": 7.465,
+    "altitude_m": 907,
+    "aperture_m": 0.5,
+    "builtin": true
+  },
+  {
+    "id": "sodankyla",
+    "name": "Sodankylä Geophysical Obs. (FI)",
+    "lat": 67.366,
+    "lon": 26.633,
+    "altitude_m": 180,
+    "aperture_m": 1.0,
+    "builtin": true
+  },
+  {
+    "id": "helmos",
+    "name": "Helmos - Aristarchos 2.3m (GR)",
+    "lat": 37.9844,
+    "lon": 22.1961,
+    "altitude_m": 2340,
+    "aperture_m": 2.3,
+    "builtin": true
+  },
+  {
+    "id": "skinakas",
+    "name": "Skinakas Observatory - Crete (GR)",
+    "lat": 35.212,
+    "lon": 24.899,
+    "altitude_m": 1750,
+    "aperture_m": 1.3,
+    "builtin": true,
+    "notes": "Ntanos et al. 2021 (Photonics 8, 544): South OGS, 1.3 m receiver telescope"
+  },
+  {
+    "id": "cholomondas",
+    "name": "Cholomondas Observatory (GR)",
+    "lat": 40.3419,
+    "lon": 23.506,
+    "altitude_m": 850,
+    "aperture_m": 0.75,
+    "builtin": true,
+    "notes": "Ntanos et al. 2021 (Photonics 8, 544): North OGS, 0.75 m receiver telescope"
+  },
+  {
+    "id": "lomnicky-stit",
+    "name": "Lomnický štít Obs. (SK)",
+    "lat": 49.195,
+    "lon": 20.213,
+    "altitude_m": 2634,
+    "aperture_m": 0.5,
+    "builtin": true
+  },
+  {
+    "id": "xinglong",
+    "name": "Xinglong Station - NAOC (CN)",
+    "lat": 40.396,
+    "lon": 117.578,
+    "altitude_m": 900,
+    "aperture_m": 1.2,
+    "builtin": true,
+    "notes": "Micius QKD ground station; Liao et al., Nature 549, 43 (2017)"
+  },
+  {
+    "id": "nanshan",
+    "name": "Nanshan / Urumqi Station (CN)",
+    "lat": 43.472,
+    "lon": 87.178,
+    "altitude_m": 2080,
+    "aperture_m": 1.2,
+    "builtin": true,
+    "notes": "Micius QKD ground station — 1200 km baseline with Xinglong"
+  },
+  {
+    "id": "delingha",
+    "name": "Delingha Station - NAOC (CN)",
+    "lat": 37.374,
+    "lon": 97.726,
+    "altitude_m": 3200,
+    "aperture_m": 0.6,
+    "builtin": true,
+    "notes": "Micius entanglement distribution station; Yin et al., Science 356 (2017)"
+  },
+  {
+    "id": "lhasa",
+    "name": "Lhasa / Tibet Station (CN)",
+    "lat": 29.654,
+    "lon": 91.137,
+    "altitude_m": 3650,
+    "aperture_m": 0.4,
+    "builtin": true,
+    "notes": "High-altitude Micius relay node"
+  },
+  {
+    "id": "nict-tokyo",
+    "name": "NICT Koganei Ground Station (JP)",
+    "lat": 35.709,
+    "lon": 139.489,
+    "altitude_m": 65,
+    "aperture_m": 0.32,
+    "builtin": true,
+    "notes": "NICT QKD satellite experiments; Takenaka et al., Nature Photonics 11 (2017)"
+  },
+  {
+    "id": "chilbolton",
+    "name": "Chilbolton Obs. - STFC (UK)",
+    "lat": 51.144,
+    "lon": -1.437,
+    "altitude_m": 80,
+    "aperture_m": 0.4,
+    "builtin": true,
+    "notes": "UK QKD/optical comms research; QUARC/Speqtre project site"
+  },
+  {
+    "id": "nrl-washington",
+    "name": "NRL Chesapeake Bay Annex (US)",
+    "lat": 38.986,
+    "lon": -76.446,
+    "altitude_m": 10,
+    "aperture_m": 0.4,
+    "builtin": true,
+    "notes": "US Naval Research Lab optical satellite link experiments"
+  },
+  {
+    "id": "table-mountain",
+    "name": "JPL Table Mountain OGS (US)",
+    "lat": 34.382,
+    "lon": -117.682,
+    "altitude_m": 2289,
+    "aperture_m": 0.6,
+    "builtin": true,
+    "notes": "JPL/NASA optical ground station for LLCD and future QKD demos"
+  },
+  {
+    "id": "mauna-kea",
+    "name": "Mauna Kea Observatory (US/HI)",
+    "lat": 19.823,
+    "lon": -155.469,
+    "altitude_m": 4200,
+    "aperture_m": 3.6,
+    "builtin": true,
+    "notes": "CFHT / Canada-France site — excellent seeing, low PWV"
+  },
+  {
+    "id": "cerro-paranal",
+    "name": "Paranal Observatory - ESO (CL)",
+    "lat": -24.625,
+    "lon": -70.404,
+    "altitude_m": 2635,
+    "aperture_m": 1.8,
+    "builtin": true,
+    "notes": "ESO VLT site, Atacama desert — best atmospheric seeing globally"
+  },
+  {
+    "id": "sutherland",
+    "name": "SAAO Sutherland (ZA)",
+    "lat": -32.381,
+    "lon": 20.811,
+    "altitude_m": 1798,
+    "aperture_m": 1.0,
+    "builtin": true,
+    "notes": "South African Astronomical Observatory; southern hemisphere QKD candidate"
+  },
+  {
+    "id": "haleakala",
+    "name": "Haleakala MSSS (US/HI)",
+    "lat": 20.708,
+    "lon": -156.257,
+    "altitude_m": 3058,
+    "aperture_m": 1.6,
+    "builtin": true,
+    "notes": "US Air Force Maui Space Surveillance System — optical ranging site"
+  },
+  {
+    "id": "graz",
+    "name": "SLR Graz - TU Graz (AT)",
+    "lat": 47.067,
+    "lon": 15.494,
+    "altitude_m": 480,
+    "aperture_m": 0.82,
+    "builtin": true,
+    "notes": "Satellite Laser Ranging station; European space agency experiments"
+  },
+  {
+    "id": "tromso",
+    "name": "KSAT Tromsø Ground Station (NO)",
+    "lat": 69.661,
+    "lon": 18.94,
+    "altitude_m": 100,
+    "aperture_m": 0.5,
+    "builtin": true,
+    "notes": "High-latitude polar-orbit access; KSAT commercial ground network"
+  },
+  {
+    "id": "svalbard",
+    "name": "Svalbard SvalSat (NO)",
+    "lat": 78.229,
+    "lon": 15.408,
+    "altitude_m": 460,
+    "aperture_m": 0.5,
+    "builtin": true,
+    "notes": "Highest-latitude major ground station; sees every polar orbit pass"
+  }
+]

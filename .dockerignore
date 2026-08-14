@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.env
+.planning
+.gsd
+*.sqlite3
+paper.tex
+refs.bib
+docs/
+.vscode/
+.idea/
+*.md

@@ -1,0 +1,49 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+
+# ---- Editor / tool configs ----
+.vscode/
+.gemini/
+.claude/
+
+# ---- Secrets & runtime-generated (never commit) ----
+# Cesium Ion token
+ion_token.json
+# Runtime database + SQLite WAL sidecars, generated at startup
+app/data/app.sqlite3
+app/data/app.sqlite3-shm
+app/data/app.sqlite3-wal
+
+# ---- Keep the public repo code-only ----
+# Only README.md, LICENSE and CLAUDE.md are intentionally tracked non-code files.
+# Everything below is docs / research / AI scaffolding / personal notes — not project code.
+
+# AI planning & agent tooling (internal scaffolding, not project source)
+.planning/
+.agents/
+.github/
+.gsd
+.gsd/
+
+# Documentation & research artifacts
+ARCHITECTURE.md
+ReadmeLogic.md
+docs/
+paper.tex
+refs.bib
+
+# Third-party literature (copyrighted — never redistribute)
+*.pdf
+
+# Generated figures and paper artifacts (regenerate with make_figures.py)
+figures/
+
+# Personal notes & working documents
+MEJORAS_PROPUESTAS.md
+My_explanation.tex
+refs_my_explanations.bib
+
+# Cached ERA5 reanalysis (immutable, refetchable) — keeps study runs offline
+.cache/
